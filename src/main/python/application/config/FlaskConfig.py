@@ -10,7 +10,7 @@ load_dotenv()
 # Diretório de logs configurável e consistente com o container
 LOG_DIR = os.getenv('LOG_DIR', '/app/logs')
 os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE_PATH = os.path.join(LOG_DIR, 'app.log')
+LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 
 def validate_environment_variables():
     """Valida variáveis de ambiente obrigatórias (multi-SGBD compatível)"""
@@ -30,20 +30,19 @@ def validate_environment_variables():
         raise ValueError("Variáveis de ambiente faltando:\n" + "\n".join(missing_vars))
 
     if not os.getenv('RAG_FAISS_PATH'):
-        logging.info("ℹ️  RAG_FAISS_PATH não definido — FAISS desativado; fallback BM25 habilitado.")
+        logging.info("ℹ️  RAG_FAISS_PATH não definido — fallback BM25 habilitado.")
 
-    # Log configuration without sensitive data
-    logging.info("✅ Configuração validada - DB e embeddings OK.")
+    logging.info("✅ Configuração validada — DB e embeddings OK.")
     
 def get_config_values():
     """Retorna valores de configuração validados (multi-SGBD compatível)"""
     return {
-        'db_vendor': 'postgresql',  # Mantido por compatibilidade
-        'database_url': os.environ['DATABASE_URL'],  # Obrigatório
+        'db_vendor': os.getenv('DB_VENDOR', 'generic'),
+        'database_url': os.environ['DATABASE_URL'],
         'embeddings_provider': os.getenv('EMBEDDINGS_PROVIDER', 'openai'),
         'lexml_timeout': int(os.getenv('LEXML_TIMEOUT_SECONDS', '8')),
         'rag_topk': int(os.getenv('RAG_TOPK', '5')),
-        'rag_faiss_path': os.getenv('RAG_FAISS_PATH', 'rag/index/faiss'),
+        'rag_faiss_path': os.getenv('RAG_FAISS_PATH'),
         'legal_cache_ttl': int(os.getenv('LEGAL_CACHE_TTL_DAYS', '7')),
         'rate_limit_per_minute': int(os.getenv('RATE_LIMIT_PER_MINUTE', '30')),
     }
@@ -146,7 +145,11 @@ def auto_load_knowledge_base():
         
         if document_count > 0:
             # Base já populada
-            logging.info(f"📚 Base de conhecimento já populada com {document_count} documentos e {chunk_count} chunks")
+            logging.info(
+                "📚 Base de conhecimento já populada com %s documentos e %s chunks",
+                document_count,
+                chunk_count,
+            )
             return True
         
         # Base vazia, executar ingestão automática
@@ -160,14 +163,18 @@ def auto_load_knowledge_base():
             # Verificar novamente após a ingestão
             final_document_count = db.session.query(KbDocument).count()
             final_chunk_count = db.session.query(KbChunk).count()
-            logging.info(f"✅ Ingestão concluída: {final_document_count} documentos / {final_chunk_count} chunks")
+            logging.info(
+                "✅ Ingestão concluída: %s documentos / %s chunks",
+                final_document_count,
+                final_chunk_count,
+            )
             return True
         else:
-            logging.error(f"❌ Erro na ingestão automática")
+            logging.error("❌ Erro na ingestão automática")
             return False
-            
+
     except Exception as e:
-        logging.error(f"❌ Erro verificando/carregando base de conhecimento: {str(e)}")
+        logging.error("❌ Erro verificando/carregando base de conhecimento: %s", e)
         return False
 
 def create_api():
@@ -182,7 +189,7 @@ def create_api():
         stream_handler = logging.StreamHandler()
         stream_handler.setFormatter(formatter)
 
-        file_handler = logging.FileHandler(LOG_FILE_PATH, mode='a')
+        file_handler = logging.FileHandler(LOG_FILE, mode='a')
         file_handler.setFormatter(formatter)
 
         root_logger.addHandler(stream_handler)
@@ -233,7 +240,7 @@ def create_api():
             # Modo restritivo (produção)
             # Formato: "https://app.example.com,https://admin.example.com"
             origins_list = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
-            logging.info(f"✅ CORS configurado para origens específicas: {origins_list}")
+            logging.info("✅ CORS configurado para origens específicas: %s", origins_list)
             CORS(
                 app,
                 origins=origins_list,
@@ -284,7 +291,7 @@ def create_api():
         with app.app_context():
             auto_load_knowledge_base()
     else:
-        logging.info("AUTO_INGEST_ON_BOOT desabilitado - pulando ingestão automática.")
+        logging.info("AUTO_INGEST_ON_BOOT desabilitado — pulando ingestão inicial.")
     
     # Inicializar rate limiting
     limiter.init_app(app)
