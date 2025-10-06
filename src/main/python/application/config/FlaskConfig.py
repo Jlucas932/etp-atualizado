@@ -1,5 +1,7 @@
 import os
 import logging
+import re
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables before any other imports
@@ -44,6 +46,7 @@ from flask_cors import CORS
 from application.config.LimiterConfig import limiter
 from domain.interfaces.dataprovider.DatabaseConfig import init_database, db
 from domain.dto.KnowledgeBaseDto import KbDocument, KbChunk
+from domain.usecase.utils.security_utils import mask_database_url
 from rag.ingest_etps import ETPIngestor
 from pathlib import Path
 import time
@@ -67,6 +70,63 @@ try:
 except ImportError:
     PROMETHEUS_AVAILABLE = False
     logging.warning("⚠️  prometheus_client não instalado - métricas desabilitadas")
+
+
+def _coerce_positive_int(value: Optional[str], default: int) -> int:
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_max_content_length(raw_value: Optional[str]) -> int:
+    """Converte MAX_CONTENT_LENGTH para bytes aplicando heurísticas de MB."""
+    default_bytes = 16 * 1024 * 1024
+
+    if not raw_value:
+        return default_bytes
+
+    value = raw_value.strip().lower()
+    multiplier = 1
+
+    suffix_match = re.match(r"^(?P<number>[0-9]+(?:\.[0-9]+)?)(?P<unit>[a-z]*)$", value)
+    if suffix_match:
+        number = suffix_match.group('number')
+        unit = suffix_match.group('unit')
+    else:
+        number = value
+        unit = ''
+
+    try:
+        numeric_value = float(number)
+    except ValueError:
+        logging.warning(
+            "Valor inválido para MAX_CONTENT_LENGTH='%s'. Aplicando padrão de 16MB.",
+            raw_value,
+        )
+        return default_bytes
+
+    if unit in ('mb', 'mib', 'm'):
+        multiplier = 1024 * 1024
+    elif unit in ('kb', 'kib', 'k'):
+        multiplier = 1024
+    elif unit in ('bytes', 'byte', 'b', ''):
+        multiplier = 1
+    else:
+        logging.warning(
+            "Unidade '%s' inválida para MAX_CONTENT_LENGTH. Interpretando como MB.",
+            unit,
+        )
+        multiplier = 1024 * 1024
+
+    bytes_value = int(numeric_value * multiplier)
+
+    # Heurística: valores pequenos são MB
+    if multiplier == 1 and bytes_value < 1024:
+        bytes_value *= 1024 * 1024
+
+    return bytes_value if bytes_value > 0 else default_bytes
 
 def auto_load_knowledge_base():
     """
@@ -164,23 +224,34 @@ def create_api():
     else:
         logging.info("ℹ️  CORS não configurado (CORS_ORIGINS não definido)")
     
-    # Configurar limites de upload via variável de ambiente
-    # Se MAX_CONTENT_LENGTH vier em MB, converter para bytes
-    # Se vier em bytes (>1024), usar direto
-    max_content_length_str = os.getenv('MAX_CONTENT_LENGTH', '16')
-    max_content_length_int = int(max_content_length_str)
-    
-    if max_content_length_int < 1024:
-        # Valor em MB, converter para bytes
-        max_content_bytes = max_content_length_int * 1024 * 1024
-        logging.info(f"✅ Limite de upload configurado: {max_content_length_int} MB ({max_content_bytes} bytes)")
-    else:
-        # Valor já em bytes
-        max_content_bytes = max_content_length_int
-        max_content_mb = max_content_bytes / (1024 * 1024)
-        logging.info(f"✅ Limite de upload configurado: {max_content_bytes} bytes ({max_content_mb:.1f} MB)")
-    
+    # Configurar limites de upload via variável de ambiente (MB -> bytes automaticamente)
+    raw_max_content_length = os.getenv('MAX_CONTENT_LENGTH', '16')
+    max_content_bytes = _parse_max_content_length(raw_max_content_length)
+    max_content_mb = max_content_bytes / (1024 * 1024)
+    logging.info(
+        "✅ Limite de upload configurado: %s (%0.1f MB)",
+        f"{max_content_bytes} bytes",
+        max_content_mb,
+    )
     app.config['MAX_CONTENT_LENGTH'] = max_content_bytes
+
+    # SQLAlchemy configs
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    pool_size = _coerce_positive_int(os.getenv('DB_POOL_SIZE'), 5)
+    max_overflow = _coerce_positive_int(os.getenv('DB_MAX_OVERFLOW'), 10)
+    pool_recycle = _coerce_positive_int(os.getenv('DB_POOL_RECYCLE'), 3600)
+    engine_options = {
+        'pool_pre_ping': True,
+        'future': True,
+        'pool_size': pool_size,
+        'max_overflow': max_overflow,
+        'pool_recycle': pool_recycle,
+    }
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
+
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        logging.info("✅ DATABASE_URL configurada: %s", mask_database_url(database_url))
     
     # Configurar banco de dados
     init_database(app, basedir)
@@ -215,21 +286,22 @@ def create_api():
     def metrics():
         if not PROMETHEUS_AVAILABLE:
             return {"error": "Prometheus metrics not available"}, 503
-        
+
+        metrics_token = os.getenv('METRICS_TOKEN')
+
+        if not metrics_token:
+            logging.error("METRICS_TOKEN não configurado - negando acesso ao /metrics")
+            return {"error": "METRICS token not configured"}, 503
+
         # Verificar token de autorização
         auth_header = request.headers.get('Authorization', '')
-        expected_token = os.getenv('METRICS_TOKEN')
-        
-        if not expected_token:
-            return {"error": "METRICS_TOKEN not configured"}, 500
-        
         if not auth_header.startswith('Bearer '):
-            return {"error": "Unauthorized - Bearer token required"}, 401
-        
-        token = auth_header[7:]  # Remove "Bearer "
-        if token != expected_token:
-            return {"error": "Unauthorized - Invalid token"}, 401
-        
+            return {"error": "Unauthorized"}, 401
+
+        token = auth_header[7:]
+        if token != metrics_token:
+            return {"error": "Unauthorized"}, 401
+
         # Retornar métricas
         return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
     
@@ -243,7 +315,7 @@ def create_api():
         def after_request_metrics(response):
             if hasattr(request, '_start_time'):
                 duration = time.time() - request._start_time
-                endpoint = request.endpoint or 'unknown'
+                endpoint = request.endpoint or request.path or 'unknown'
                 
                 # Registrar métricas
                 http_requests_total.labels(
@@ -291,5 +363,5 @@ def create_api():
                     print("❌ Pasta static não existe!")
                 
                 return f"index.html not found. Static folder: {static_folder_path}", 404
-    
+
     return app
