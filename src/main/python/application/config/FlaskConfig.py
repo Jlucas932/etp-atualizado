@@ -7,17 +7,18 @@ from dotenv import load_dotenv
 # Load environment variables before any other imports
 load_dotenv()
 
-# Garantir que o diretório de logs exista antes de configurarmos os handlers
-os.makedirs('logs', exist_ok=True)
+# Diretório de logs configurável e consistente com o container
+LOG_DIR = os.getenv('LOG_DIR', '/app/logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE_PATH = os.path.join(LOG_DIR, 'app.log')
 
 def validate_environment_variables():
-    """Valida as variáveis de ambiente obrigatórias - PostgreSQL apenas"""
+    """Valida variáveis de ambiente obrigatórias (multi-SGBD compatível)"""
     required_vars = {
         'OPENAI_API_KEY': 'Chave da API OpenAI é obrigatória',
         'SECRET_KEY': 'Chave secreta do Flask é obrigatória',
-        'DATABASE_URL': 'URL do banco PostgreSQL é obrigatória',
+        'DATABASE_URL': 'URL do banco de dados é obrigatória',
         'EMBEDDINGS_PROVIDER': 'Provedor de embeddings é obrigatório',
-        'RAG_FAISS_PATH': 'Caminho do índice FAISS é obrigatório',
     }
     
     missing_vars = []
@@ -26,15 +27,18 @@ def validate_environment_variables():
             missing_vars.append(f"{var}: {message}")
     
     if missing_vars:
-        raise ValueError(f"Variáveis de ambiente faltando:\n" + "\n".join(missing_vars))
-    
+        raise ValueError("Variáveis de ambiente faltando:\n" + "\n".join(missing_vars))
+
+    if not os.getenv('RAG_FAISS_PATH'):
+        logging.info("ℹ️  RAG_FAISS_PATH não definido — FAISS desativado; fallback BM25 habilitado.")
+
     # Log configuration without sensitive data
-    logging.info(f"✅ Configuração validada - DB: PostgreSQL, Embeddings: {os.getenv('EMBEDDINGS_PROVIDER')}")
+    logging.info("✅ Configuração validada - DB e embeddings OK.")
     
 def get_config_values():
-    """Retorna valores de configuração validados - PostgreSQL apenas"""
+    """Retorna valores de configuração validados (multi-SGBD compatível)"""
     return {
-        'db_vendor': 'postgresql',  # Sempre PostgreSQL
+        'db_vendor': 'postgresql',  # Mantido por compatibilidade
         'database_url': os.environ['DATABASE_URL'],  # Obrigatório
         'embeddings_provider': os.getenv('EMBEDDINGS_PROVIDER', 'openai'),
         'lexml_timeout': int(os.getenv('LEXML_TIMEOUT_SECONDS', '8')),
@@ -51,7 +55,6 @@ from domain.interfaces.dataprovider.DatabaseConfig import init_database, db
 from domain.dto.KnowledgeBaseDto import KbDocument, KbChunk
 from domain.usecase.utils.security_utils import mask_database_url
 from rag.ingest_etps import ETPIngestor
-from pathlib import Path
 import time
 
 # Prometheus metrics
@@ -170,19 +173,25 @@ def auto_load_knowledge_base():
 def create_api():
     """Cria e configura a aplicação Flask"""
     
+    # Configurar logging seguro (sem chaves de API)
+    log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    root_logger = logging.getLogger()
+
+    if not root_logger.handlers:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+
+        file_handler = logging.FileHandler(LOG_FILE_PATH, mode='a')
+        file_handler.setFormatter(formatter)
+
+        root_logger.addHandler(stream_handler)
+        root_logger.addHandler(file_handler)
+
+    root_logger.setLevel(getattr(logging, log_level, logging.INFO))
+
     # Validar variáveis de ambiente obrigatórias
     validate_environment_variables()
-    
-    # Configurar logging seguro (sem chaves de API)
-    log_level = os.getenv('LOG_LEVEL', 'INFO')
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler('logs/app.log', mode='a')
-        ]
-    )
     
     # Caminho absoluto da pasta atual
     basedir = os.path.abspath(os.path.dirname(__file__))
@@ -199,9 +208,9 @@ def create_api():
     template_path = os.path.join(basedir, '..', '..', '..', '..', '..', 'templates')
     template_path = os.path.abspath(template_path)
     
-    print(f"📁 Pasta static configurada: {static_path}")
-    print(f"📁 Pasta templates configurada: {template_path}")
-    print(f"📄 Verificando index.html: {os.path.exists(os.path.join(static_path, 'index.html'))}")
+    logging.debug("📁 Pasta static configurada: %s", static_path)
+    logging.debug("📁 Pasta templates configurada: %s", template_path)
+    logging.debug("📄 Verificando index.html: %s", os.path.exists(os.path.join(static_path, 'index.html')))
     
     # Inicialização do app Flask
     app = Flask(__name__, static_folder=static_path, template_folder=template_path)
@@ -270,9 +279,12 @@ def create_api():
     # Configurar banco de dados
     init_database(app, basedir)
     
-    # Carregar base de conhecimento automaticamente se necessário
-    with app.app_context():
-        auto_load_knowledge_base()
+    # Ingestão automática opcional
+    if os.getenv('AUTO_INGEST_ON_BOOT', 'false').lower() == 'true':
+        with app.app_context():
+            auto_load_knowledge_base()
+    else:
+        logging.info("AUTO_INGEST_ON_BOOT desabilitado - pulando ingestão automática.")
     
     # Inicializar rate limiting
     limiter.init_app(app)
@@ -351,31 +363,31 @@ def create_api():
     def serve(path):
         static_folder_path = app.static_folder
         
-        print(f"🔍 Tentando servir: {path}")
-        print(f"📁 Static folder: {static_folder_path}")
+        logging.debug("🔍 Tentando servir: %s", path)
+        logging.debug("📁 Static folder: %s", static_folder_path)
         
         if static_folder_path is None:
             return "Static folder not configured", 404
 
         if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
-            print(f"✅ Arquivo encontrado: {path}")
+            logging.debug("✅ Arquivo encontrado: %s", path)
             return send_from_directory(static_folder_path, path)
         else:
             index_path = os.path.join(static_folder_path, 'index.html')
-            print(f"🔍 Procurando index.html em: {index_path}")
-            print(f"📄 Index.html existe: {os.path.exists(index_path)}")
-            
+            logging.debug("🔍 Procurando index.html em: %s", index_path)
+            logging.debug("📄 Index.html existe: %s", os.path.exists(index_path))
+
             if os.path.exists(index_path):
-                print("✅ Servindo index.html")
+                logging.debug("✅ Servindo index.html")
                 return send_from_directory(static_folder_path, 'index.html')
             else:
                 # Listar arquivos na pasta static para debug
                 if os.path.exists(static_folder_path):
                     files = os.listdir(static_folder_path)
-                    print(f"📂 Arquivos na pasta static: {files}")
+                    logging.debug("📂 Arquivos na pasta static: %s", files)
                 else:
-                    print("❌ Pasta static não existe!")
-                
+                    logging.warning("❌ Pasta static não existe!")
+
                 return f"index.html not found. Static folder: {static_folder_path}", 404
 
     return app
