@@ -98,12 +98,22 @@ def init_database(app, basedir):
     from domain.dto.KbDto import KbDocument, KbChunk, LegalNormCache
     
     with app.app_context():
-        # Criar todas as tabelas usando SQLAlchemy (sem Liquibase)
-        logging.info("🔧 Criando tabelas usando SQLAlchemy...")
-        db.create_all()
-        logging.info("✅ Tabelas criadas com sucesso!")
+        # create_all e seed controlados por flags
+        create_all_flag = os.getenv('DB_CREATE_ALL', 'false').lower() == 'true'
+        seed_flag = os.getenv('SEED_DEMO_USERS', 'false').lower() == 'true'
 
-        seed_demo_users()
+        if dialect == 'sqlite' or create_all_flag:
+            logging.info("🔧 Criando tabelas com SQLAlchemy (dialeto: %s, DB_CREATE_ALL=%s)", dialect, create_all_flag)
+            db.create_all()
+            logging.info("✅ Tabelas criadas com sucesso!")
+        else:
+            logging.info("ℹ️  DB_CREATE_ALL desabilitado para dialeto '%s' - assumindo migrações gerenciadas externamente.", dialect)
+
+        if seed_flag:
+            logging.info("🌱 Populando usuários demo (SEED_DEMO_USERS habilitado)")
+            seed_demo_users()
+        else:
+            logging.info("ℹ️  SEED_DEMO_USERS desabilitado - nenhuma seed executada.")
 
     logging.info("✅ Banco de dados configurado com sucesso!")
     
@@ -112,58 +122,32 @@ def init_database(app, basedir):
 def seed_demo_users():
     """Popula o banco com os usuários demo pré-definidos"""
     from domain.dto.UserDto import User
-    
-    demo_users = [
-        {
-            "username": "demo_user1",
-            "email": "demo1@example.com",
-            "password": "demo123"
-        },
-        {
-            "username": "demo_user2",
-            "email": "demo2@example.com",
-            "password": "demo123"
-        },
-        {
-            "username": "demo_user3",
-            "email": "demo3@example.com",
-            "password": "demo123"
-        },
-        {
-            "username": "demo_user4",
-            "email": "demo4@example.com",
-            "password": "demo123"
-        },
-        {
-            "username": "demo_user5",
-            "email": "demo5@example.com",
-            "password": "demo123"
-        },
-        {
-            "username": "demo_user6",
-            "email": "demo6@example.com",
-            "password": "demo123"
-        }
-    ]
-    
-    created_count = 0
-    for user_data in demo_users:
-        # Verificar se o usuário já existe
-        existing_user = User.query.filter_by(username=user_data['username']).first()
-        
-        if not existing_user:
-            user = User(
-                username=user_data['username'],
-                email=user_data['email']
-            )
-            user.set_password(user_data['password'])
-            
-            db.session.add(user)
-            created_count += 1
-    
-    if created_count > 0:
+    from werkzeug.security import generate_password_hash
+
+    demo_users = (
+        ("demo_user1", "demo1@example.com", "demo123"),
+        ("demo_user2", "demo2@example.com", "demo123"),
+        ("demo_user3", "demo3@example.com", "demo123"),
+        ("demo_user4", "demo4@example.com", "demo123"),
+    )
+
+    logging.info("👤 Verificando usuários demo pré-configurados...")
+
+    created_any = False
+
+    for username, email, plain_password in demo_users:
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            continue
+
+        hashed_password = generate_password_hash(plain_password)
+        user = User(username=username, email=email, password=hashed_password)
+        db.session.add(user)
+        created_any = True
+
+    if created_any:
         db.session.commit()
-        print(f"✅ {created_count} usuários demo criados")
+        logging.info("✅ Usuários demo criados/atualizados com sucesso.")
     else:
-        print("ℹ️ Usuários demo já existem no banco")
+        logging.info("ℹ️  Usuários demo já existentes - nenhuma alteração realizada.")
 

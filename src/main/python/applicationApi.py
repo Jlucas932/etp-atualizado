@@ -30,7 +30,8 @@ logging.basicConfig(
 )
 
 # Criar aplicação Flask (necessário para gunicorn)
-app = create_api()
+create_app = create_api
+app = create_app()
 
 if __name__ == "__main__":
     # Criar diretório de logs se não existir
