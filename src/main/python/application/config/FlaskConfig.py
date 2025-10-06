@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Diretório de logs configurável e consistente com o container
-LOG_DIR = os.getenv('LOG_DIR', '/app/logs')
+LOG_DIR = os.getenv('LOG_DIR', '/opt/az/logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 LOG_FILE = os.path.join(LOG_DIR, 'app.log')
 

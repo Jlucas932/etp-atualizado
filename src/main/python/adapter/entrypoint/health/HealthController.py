@@ -1,18 +1,14 @@
-import os
 from datetime import datetime
 from flask import Blueprint, jsonify
-from flask_cors import cross_origin
 
 health_bp = Blueprint('health', __name__)
 
 @health_bp.route('/health', methods=['GET'])
-@cross_origin()
 def health_check():
     """Endpoint de verificação de saúde da aplicação"""
     return jsonify({'status': 'ok'}), 200
 
 @health_bp.route('/version', methods=['GET'])
-@cross_origin()
 def get_version():
     """Retorna informações de versão"""
     return jsonify({

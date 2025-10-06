@@ -35,12 +35,13 @@ def _initialize_rag(api_key: str) -> None:
 
     try:
         from pathlib import Path
+        import os
 
         import openai
 
         from rag.retrieval import get_retrieval_instance
 
-        index_dir = Path('src/main/python/rag/index/faiss')
+        index_dir = Path(os.getenv('RAG_FAISS_PATH', 'src/main/python/rag/index/faiss'))
         if not index_dir.exists() or not (index_dir / 'etp_index.faiss').exists():
             logger.info(
                 "Índices FAISS não encontrados — operação seguirá com fallback BM25."
