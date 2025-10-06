@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoDoc Licitação</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Markdown rendering library -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="conversational_styles.css">
+</head>
+<body>
+    <!-- Contêiner principal da aplicação unificada -->
+    <div class="app-container">
+        <!-- === SIDEBAR LATERAL === -->
+        <!-- Barra lateral com navegação, ações rápidas e histórico -->
+        <aside class="sidebar">
+            <!-- Cabeçalho da sidebar com botões de toggle e busca -->
+            <div class="sidebar-header">
+                <button class="menu-toggle" onclick="toggleSidebar()">
+                    <i class="fas fa-bars"></i>
+                </button>
+                <button class="search-btn" onclick="showSearchView()">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+
+            <!-- Botões de ação para criar novos documentos e conversas -->
+            <div class="sidebar-actions">
+                <button class="btn-primary" id="newDocBtn">
+                    <i class="fas fa-plus"></i>
+                    Novo Documento
+                </button>
+                <button class="btn-primary" id="newConversationBtn">
+                    <i class="fas fa-plus"></i>
+                    Nova Conversa
+                </button>
+            </div>
+
+            <!-- Seção de itens recentes - documentos e conversas -->
+            <div class="sidebar-section">
+                <h3 class="section-title">Recentes</h3>
+                <div class="recent-items">
+                    <!-- Items recentes são adicionados dinamicamente via JavaScript -->
+                </div>
+            </div>
+
+            <!-- Rodapé da sidebar com informações do usuário -->
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar">AM</div>
+                    <span class="user-name">Ale Maciel</span>
+                </div>
+                <div class="user-actions">
+                    <button class="settings-btn" onclick="editUser()">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                    <button class="logout-btn" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- === ÁREA PRINCIPAL DE CONTEÚDO === -->
+        <!-- Área principal que alterna entre as três views: home, pesquisa e chat -->
+        <main class="main-content">
+            <!-- === VIEW HOME/INICIAL === -->
+            <!-- Tela inicial com opções de documentos -->
+            <div class="home-view">
+                <header class="main-header">
+                    <div class="app-title">
+                        <i class="fas fa-file-alt app-icon" onclick="showHomeView()" style="cursor: pointer;"></i>
+                        <h1 onclick="showHomeView()" style="cursor: pointer;">AutoDoc Licitação</h1>
+                    </div>
+                </header>
+                <div class="content-center">
+                    <h2 class="main-question">Que documento vamos criar hoje?</h2>
+                    <!-- Opções de documentos disponíveis -->
+                    <div class="document-options">
+                        <button class="doc-option" onclick="selectDocument('estudo-tecnico')">Estudo Técnico Preliminar</button>
+                        <button class="doc-option">Mapa de Risco</button>
+                        <button class="doc-option">Plano de Contratações Anual</button>
+                        <button class="doc-option">Termo de Referência</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- === VIEW DE PESQUISA === -->
+            <!-- Tela de pesquisa para buscar conversas e documentos -->
+            <div class="search-view" style="display: none;">
+                <h2 class="search-title">Pesquisa</h2>
+                <div class="search-input-container">
+                    <input type="text" id="searchInput" placeholder="Pesquise conversas ou documentos">
+                    <button class="search-input-button">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+                <!-- Resultados da pesquisa são populados dinamicamente -->
+                <div id="searchResults" class="search-results-list">
+                </div>
+            </div>
+
+            <!-- === VIEW DE CHAT === -->
+            <!-- Interface de chat/conversa para criar documentos e tirar dúvidas -->
+            <div class="chat-view" style="display: none;">
+                <header class="chat-header">
+                    <h2 id="chatTitle">Nova Conversa</h2>
+                </header>
+                <!-- Container de mensagens do chat -->
+                <div class="chat-messages-container" id="chatMessages">
+                    <!-- Mensagens são adicionadas dinamicamente via JavaScript -->
+                </div>
+                <!-- Área de input para o usuário digitar mensagens -->
+                <footer class="chat-input-area">
+                    <div class="chat-input-wrapper">
+                        <button class="attach-btn" aria-label="Anexar arquivo">
+                            <i class="fas fa-paperclip"></i>
+                        </button>
+                        <textarea id="userInput" placeholder="Pergunte alguma coisa..." rows="1"></textarea>
+                        <button id="sendBtn" class="send-btn" aria-label="Enviar mensagem">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                </footer>
+            </div>
+        </main>
+    </div>
+
+    <!-- === MODAL DE EDIÇÃO DE PERFIL === -->
+    <!-- Modal para editar informações do usuário -->
+    <div class="modal-overlay" id="editProfileModal">
+         <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fas fa-user-edit"></i>
+                    Editar Perfil
+                </h3>
+                <button class="modal-close" onclick="closeEditModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <!-- Formulário de edição do perfil -->
+            <form class="modal-form" onsubmit="saveProfile(event)">
+                <div class="form-group">
+                    <label class="form-label" for="userName">Nome</label>
+                    <input type="text" id="userName" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label" for="userEmail">Email</label>
+                    <input type="email" id="userEmail" class="form-input" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeEditModal()">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn-primary-modal">
+                        Salvar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts da aplicação -->
+    <script src="requirements_renderer.js"></script>
+    <script src="script.js"></script>
+    <script src="conversational_renderer.js"></script>
+</body>
+</html>
+

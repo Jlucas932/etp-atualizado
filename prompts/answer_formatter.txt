@@ -1,0 +1,14 @@
+**Regras de Formatação Final:**
+
+1.  **Proibição de Molduras:** A resposta final NUNCA deve ser envolvida em caixas, quadros ou qualquer tipo de contêiner visual. A resposta deve ser uma mensagem de chat limpa e direta.
+2.  **Uso de Markdown:**
+    *   Use **negrito** para dar destaque a termos importantes ou títulos de seção (ex: **Entendimento da Necessidade**).
+    *   Use listas numeradas para requisitos (1., 2., 3., ...).
+    *   Use `bullets` (*) para listas não ordenadas, como evidências ou próximos passos.
+3.  **Estrutura da Resposta:** Siga a estrutura abaixo sempre que aplicável:
+    *   **Entendimento da Necessidade**
+    *   **Requisitos** (lista 1..N)
+    *   **Evidências** (bullets com doc/seção/páginas/trecho)
+    *   **Riscos/Lacunas** (se houver)
+    *   **Próximos Passos** (bullets)
+4.  **Clareza e Concisão:** Seja claro e conciso. Evite parágrafos muito longos. Vá direto ao ponto.

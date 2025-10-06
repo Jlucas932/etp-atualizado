@@ -1,0 +1,178 @@
+# ============================================================================
+# DOCKER COMPOSE - AutoDocIA v2.0
+# ============================================================================
+# Suporta profiles para desenvolvimento e produção
+#
+# Uso:
+#   Desenvolvimento: docker-compose --profile dev up
+#   Produção:        docker-compose --profile prod up
+#   Ambos:           docker-compose --profile dev --profile prod up
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # --------------------------------------------------------------------------
+  # APLICAÇÃO
+  # --------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: az_etp_app
+    ports:
+      - "${PORT:-5002}:5002"
+    environment:
+      # Variáveis obrigatórias
+      - OPENAI_API_KEY=${OPENAI_API_KEY:?OPENAI_API_KEY é obrigatória}
+      - SECRET_KEY=${SECRET_KEY:-dev_secret_key_change_me}
+      - DATABASE_URL=postgresql+psycopg2://az_etp_user:az_etp_password_2024@db:5432/az_etp_db
+      
+      # Flask
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - DEBUG=True
+      
+      # Servidor
+      - HOST=0.0.0.0
+      - PORT=5002
+      
+      # RAG e Embeddings
+      - EMBEDDINGS_PROVIDER=${EMBEDDINGS_PROVIDER:-openai}
+      - RAG_FAISS_PATH=/opt/az/src/main/python/rag/index/faiss
+      - RAG_TOPK=${RAG_TOPK:-5}
+      
+      # CORS (permissivo em dev)
+      - CORS_ORIGINS=*
+      
+      # Upload
+      - MAX_CONTENT_LENGTH=${MAX_CONTENT_LENGTH:-16}
+      
+      # Rate limiting
+      - RATE_LIMIT_PER_MINUTE=${RATE_LIMIT_PER_MINUTE:-30}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+    
+    volumes:
+      # Código (read-write para hot-reload)
+      - ./src:/opt/az/src:rw
+      - ./static:/opt/az/static:rw
+      - ./templates:/opt/az/templates:rw
+      
+      # Knowledge base (read-only)
+      - ./knowledge:/opt/az/knowledge:ro
+      
+      # Dados persistentes
+      - ./data:/opt/az/data:rw
+      - ./logs:/opt/az/logs:rw
+      - ./rag/index:/opt/az/rag/index:rw
+    
+    working_dir: /opt/az
+    
+    # Sobrescreve CMD do Dockerfile para usar Flask dev server
+    command: python src/main/python/applicationApi.py
+    
+    restart: unless-stopped
+    
+    depends_on:
+      db:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    
+    networks:
+      - autodoc-network
+
+
+  # --------------------------------------------------------------------------
+  # BANCO DE DADOS - POSTGRESQL
+  # --------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-az_etp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-az_etp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-az_etp_password_2024}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=pt_BR.UTF-8"
+    
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Script de inicialização (opcional)
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-az_etp_user} -d ${POSTGRES_DB:-az_etp_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    
+    networks:
+      - autodoc-network
+    
+    # Configurações de performance (opcional)
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "work_mem=2621kB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "max_wal_size=4GB"
+
+# ----------------------------------------------------------------------------
+# VOLUMES
+# ----------------------------------------------------------------------------
+volumes:
+  # Dados do PostgreSQL
+  postgres-data:
+    driver: local
+  
+  # Dados da aplicação (apenas prod)
+  app-data:
+    driver: local
+  
+  # Logs da aplicação (apenas prod)
+  app-logs:
+    driver: local
+  
+  # Índices RAG (apenas prod)
+  app-rag-index:
+    driver: local
+
+# ----------------------------------------------------------------------------
+# NETWORKS
+# ----------------------------------------------------------------------------
+networks:
+  autodoc-network:
+    driver: bridge

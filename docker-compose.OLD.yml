@@ -1,0 +1,51 @@
+services:
+  # Aplicação Python Flask
+  app:
+    build: .
+    container_name: az_etp_app
+    ports:
+      - "5002:5002"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - PYTHONPATH=/app/src/main/python   # 🔹 Ajuste para achar o módulo rag
+      - DATABASE_URL=postgresql+psycopg2://az_etp_user:az_etp_password_2024@az_etp_postgres:5432/az_etp_db
+      - EMBEDDINGS_PROVIDER=openai
+      - RAG_FAISS_PATH=/app/src/main/python/rag/index/faiss/etp_index.faiss
+    volumes:
+      - .:/app
+      - ./database:/app/database
+      - ./logs:/app/logs
+    working_dir: /app
+    command: python3 src/main/python/applicationApi.py
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Banco de dados PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: az_etp_postgres
+    environment:
+      POSTGRES_DB: az_etp_db
+      POSTGRES_USER: az_etp_user
+      POSTGRES_PASSWORD: az_etp_password_2024
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U az_etp_user -d az_etp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local

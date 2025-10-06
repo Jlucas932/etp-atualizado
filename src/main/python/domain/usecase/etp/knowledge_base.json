@@ -1,0 +1,125 @@
+{
+  "documents": [
+    {
+      "filename": "Estudo Técnico Preliminar.pdf",
+      "type": "ETP - Aeronaves",
+      "sections": {
+        "introducao": {
+          "content": "O presente documento tem como objetivo a realização do estudo preliminar, para subsidiar a contratação de empresa especializada na prestação de serviços continuados de intermediação, implantação, operação e gerenciamento de frota de aeronaves, fins de conservação da aeronavegabilidade das aeronaves e manutenção das operações aeronáuticas.",
+          "keywords": ["estudo preliminar", "aeronaves", "aeronavegabilidade", "operações aeronáuticas"]
+        },
+        "objeto": {
+          "content": "Contratação de empresa especializada na prestação de serviço de fornecimento de sistema integrado de captura eletrônica de dados para intermediação, implantação, operação e gerenciamento de frota de aeronaves.",
+          "localizacao": "rede credenciada em todo território nacional",
+          "natureza": "serviços continuados de intermediação, implantação, operação e gerenciamento de frota de aeronaves",
+          "keywords": ["sistema integrado", "gerenciamento de frota", "território nacional"]
+        },
+        "necessidade": {
+          "content": "O contrato celebrado com a empresa especializada se faz extremamente necessária, tendo em vista que através dos cálculos feito pela equipe que integra o CIOPAER, foi observado que o contrato nº102/2022/SESP, não suprirá as demandas necessárias para as manutenções.",
+          "justificativa": "aumento da frota de aeronaves, incorporação de aeronave turbofan (jato) modelo Cessna 525B (PR-MON) e aeronave turboélice modelo King Air 250 (PS-SSP)",
+          "keywords": ["contrato insuficiente", "aumento da frota", "Cessna 525B", "King Air 250"]
+        },
+        "pca": {
+          "content": "O Plano de Trabalho Anual - PTA é um instrumento gerencial que permite especificar o detalhamento das ações em termos de serviços, responsáveis, prazos, tarefas, insumos e custos necessários. No PTA, consta valores estipulados para o contrato atual (nº102/2022/SESP).",
+          "keywords": ["PTA", "planejamento", "orçamento", "contrato atual"]
+        },
+        "normas": {
+          "content": "Lei nº 14.133, de 1º de abril de 2021, Lei de Licitações e Contratos Administrativos; Decreto Estadual n° 1.525/2022; Normas da ABNT; RBAC - Regulamento Brasileiro da Aviação Civil nº 145; RBAC nº 43",
+          "keywords": ["Lei 14.133/2021", "Decreto 1.525/2022", "RBAC 145", "RBAC 43", "ANAC"]
+        },
+        "requisitos_tecnicos": {
+          "content": "Os serviços deverão ser executados de acordo com o Programa Recomendado de Manutenção dos respectivos Fabricantes, incluindo o uso de ferramental e equipamentos específicos. A oficina deve atender aos requisitos para homologação perante a ANAC.",
+          "servicos": [
+            "Manutenção Preventiva",
+            "Manutenção Corretiva", 
+            "Fornecimento de peças, componentes e acessórios",
+            "Serviços Especialíssimos de subcontratação",
+            "Assinatura de Sistemas (FMS, Cartas, Manuais de Manutenção)"
+          ],
+          "keywords": ["manutenção preventiva", "manutenção corretiva", "homologação ANAC"]
+        },
+        "sustentabilidade": {
+          "content": "A empresa contratada deverá prestar seus serviços atendendo a legislação em vigor (Lei de licitações 14.133 de 1º de abril de 2021 e Decreto Estadual 1525/2022), que dispõe sobre os critérios de sustentabilidade ambiental na aquisição de bens e serviços.",
+          "keywords": ["sustentabilidade ambiental", "uso racional de recursos", "resíduos sólidos"]
+        },
+        "alternativas_mercado": {
+          "solucao1": "Criar a oficina de manutenção do CIOPAER",
+          "solucao2": "Contratar diretamente oficinas certificadas", 
+          "solucao3": "Contratação de empresas para a gestão de frota (intermediação, quarteirização)",
+          "escolha_justificada": "Solução 3 - por não possuir oficina homologada, processo oneroso de homologação, necessidade de contratos adicionais",
+          "keywords": ["oficina própria", "terceirização", "gestão de frota", "homologação"]
+        }
+      }
+    },
+    {
+      "filename": "Estudo Técnico Preliminar (1).pdf",
+      "type": "ETP - Comunicação Visual",
+      "sections": {
+        "introducao": {
+          "content": "O presente instrumento caracteriza a primeira etapa da fase de planejamento e apresenta os devidos estudos para a contratação que atenderá à necessidade abaixo especificada.",
+          "keywords": ["fase de planejamento", "estudos técnicos"]
+        },
+        "objeto": {
+          "content": "Serviços de instalação de painéis, adesivagem, diagramação de arte e manutenção de painéis de comunicação visual do Espaço Memórias, lugar permanente de exposição da Superintendência de Arquivo Público (SAP/SEPLAG).",
+          "localizacao": "Avenida Presidente Getúlio Vargas, 451, Centro Norte, Cuiabá, MT, CEP 78005-370",
+          "natureza": "Instalação de painéis de exposição, aplicação de adesivagem, diagramação de arte e manutenção",
+          "keywords": ["painéis", "adesivagem", "comunicação visual", "exposição"]
+        },
+        "especificacoes": {
+          "painel_expositor": {
+            "descricao": "peça expositiva que demanda a inclusão de uma nova placa de ACM, tornando-a com frente e verso",
+            "quantidade": "16 painéis (6 já frente e verso, 10 necessitam adequação)",
+            "tamanho": "0.64 x 0.93"
+          },
+          "biombo_expositor": {
+            "descricao": "peça expositora maior, demandante de nova instalação de painéis de ACM, frente e verso",
+            "quantidade": "12 peças no total, 24 faces",
+            "tamanho": "1.20 x 2.00"
+          },
+          "keywords": ["ACM", "frente e verso", "padrão de qualidade"]
+        }
+      }
+    }
+  ],
+  "common_patterns": {
+    "estrutura_etp": [
+      "1. INTRODUÇÃO",
+      "2. OBJETO DO ESTUDO E ESPECIFICAÇÕES GERAIS",
+      "2.1. LOCALIZAÇÃO DA EXECUÇÃO DO OBJETO CONTRATUAL",
+      "2.2. NATUREZA E FINALIDADE DO OBJETO CONTRATUAL", 
+      "2.3. DESCRIÇÃO DA NECESSIDADE DA CONTRATAÇÃO",
+      "2.4. DEMONSTRAÇÃO DA PREVISÃO DA CONTRATAÇÃO NO PLANO DE CONTRATAÇÕES ANUAL",
+      "3. DESCRIÇÃO DOS REQUISITOS DA CONTRATAÇÃO",
+      "3.1. Requisitos técnicos da contratação",
+      "3.2. Requisitos de sustentabilidade",
+      "3.3. Requisitos normativos",
+      "4. ESTIMATIVAS DAS QUANTIDADES",
+      "5. LEVANTAMENTO DE MERCADO E JUSTIFICATIVA DA ESCOLHA DO TIPO DE SOLUÇÃO"
+    ],
+    "fundamentacao_legal": [
+      "Lei nº 14.133/2021 - Lei de Licitações e Contratos Administrativos",
+      "Decreto Estadual nº 1.525/2022",
+      "Art. 18, § 1º da Lei nº 14.133/2021",
+      "Art. 35 do Decreto Estadual nº 1.525/2022"
+    ],
+    "elementos_obrigatorios": [
+      "Descrição da necessidade da contratação",
+      "Demonstração da previsão no plano de contratações anual",
+      "Descrição dos requisitos da contratação",
+      "Estimativas das quantidades",
+      "Levantamento de mercado e justificativa da escolha"
+    ],
+    "linguagem_padrao": {
+      "formal": true,
+      "impessoal": true,
+      "tecnica": true,
+      "administrativa": true
+    }
+  },
+  "template_sections": {
+    "introducao_template": "O presente documento tem como objetivo a realização do estudo preliminar, para subsidiar a contratação de [OBJETO_CONTRATACAO], em conformidade com o art. 18, inciso I, da Lei nº 14.133/2021.",
+    "fundamentacao_template": "Fundamentação: [DESCRICAO_FUNDAMENTACAO] (Art. 18, § 1º, [INCISO], da Lei nº 14.133/2021 e art. 35, [INCISO], do Decreto Estadual nº 1.525/2022)",
+    "sustentabilidade_template": "A empresa contratada deverá prestar seus serviços atendendo a legislação em vigor (Lei de licitações 14.133 de 1º de abril de 2021 e Decreto Estadual 1525/2022), que dispõe sobre os critérios de sustentabilidade ambiental na aquisição de bens e serviços."
+  }
+}
+

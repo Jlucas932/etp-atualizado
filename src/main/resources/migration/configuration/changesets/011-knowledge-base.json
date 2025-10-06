@@ -1,0 +1,10 @@
+[
+  {
+    "key": "knowledge_base.migration.version",
+    "value": "011"
+  },
+  {
+    "key": "knowledge_base.tables.created",
+    "value": "kb_document,kb_chunk,legal_norm_cache"
+  }
+]

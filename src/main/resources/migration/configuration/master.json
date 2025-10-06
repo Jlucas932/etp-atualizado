@@ -1,0 +1,14 @@
+{
+  "changesetList": [
+    {
+      "name": "011-knowledge-base",
+      "operation": "update",
+      "filePath": "src/main/resources/migration/configuration/changesets/011-knowledge-base.json"
+    },
+    {
+      "name": "012-kb-chunk-embedding",
+      "operation": "update",
+      "filePath": "src/main/resources/migration/configuration/changesets/012-kb-chunk-embedding.json"
+    }
+  ]
+}

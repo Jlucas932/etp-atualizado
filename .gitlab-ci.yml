@@ -1,0 +1,23 @@
+variables:
+  CURRENT_VERSION: 0.0.3
+  LATEST_NAME: $AZ_DOCKER_REGISTRY/$CI_PROJECT_PATH:latest
+  PATCH_NAME: $AZ_DOCKER_REGISTRY/$CI_PROJECT_PATH:$CURRENT_VERSION
+
+stages:
+  - Build and Publish and Docker
+
+build_and_publish_and_Docker:
+  image: $AZ_REGISTRY/hal/images/gitlab-ci-docker:latest
+  stage: Build and Publish and Docker
+  tags:
+    - aws
+  only:
+    - tags
+  before_script:
+    - echo "${AZ_PASSWORD}" | docker login --username $AZ_USERNAME --password-stdin $AZ_DOCKER_REGISTRY
+  script:
+    - docker build -t $LATEST_NAME -t $PATCH_NAME --build-arg AZ_REGISTRY_URI=$AZ_REGISTRY_URI --build-arg AZ_USERNAME=$AZ_USERNAME --build-arg AZ_PASSWORD=$AZ_PASSWORD . --pull --no-cache
+    - docker push $LATEST_NAME && docker image rm $LATEST_NAME
+    - docker push $PATCH_NAME && docker image rm $PATCH_NAME
+  after_script:
+    - docker logout $AZ_DOCKER_REGISTRY

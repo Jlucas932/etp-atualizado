@@ -1,0 +1,12 @@
+**Política de Busca e Fusão:**
+
+1.  **KB-First:** A base de conhecimento é a fonte primária de verdade. Sempre consulte-a primeiro usando a busca híbrida (FAISS + BM25).
+2.  **Thresholds de Relevância:**
+    *   **`RAG_MIN_DOCS`**: Considere uma evidência como suficiente apenas se ela for suportada por pelo menos `RAG_MIN_DOCS` documentos únicos.
+    *   **`RAG_MIN_SCORE`**: O score combinado (híbrido) de cada documento deve ser superior a `RAG_MIN_SCORE`.
+3.  **Fusão de Scores:**
+    *   Combine os scores léxico (BM25) e semântico (FAISS) usando os pesos `W_LEX` e `W_SEM`.
+    *   Score Final = (`W_LEX` * Score BM25) + (`W_SEM` * Score FAISS)
+4.  **Construção do Contexto:**
+    *   Se a evidência for suficiente, monte um contexto rico para o modelo gerador, incluindo trechos citáveis e metadados completos (doc, seção, páginas).
+    *   Se a evidência for insuficiente, a resposta deve indicar a lacuna de conhecimento e, se possível, solicitar ao usuário informações adicionais. Não invente respostas.

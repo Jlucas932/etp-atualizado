@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Administrativo - Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f6fa;
+            color: #333;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+        }
+        
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        
+        .logout-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .alert {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .alert-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        
+        .alert-error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .card-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card-header h2 {
+            color: #333;
+            font-size: 1.3rem;
+        }
+        
+        .card-body {
+            padding: 1.5rem;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 0.9rem;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-1px);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-sm {
+            padding: 0.3rem 0.7rem;
+            font-size: 0.8rem;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-group {
+            flex: 1;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .badge {
+            padding: 0.3rem 0.6rem;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+        
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .badge-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 2rem;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            position: relative;
+        }
+        
+        .close {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .close:hover {
+            color: #333;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔧 Painel Administrativo</h1>
+        <a href="{{ url_for('admin.admin_logout') }}" class="logout-btn">Sair</a>
+    </div>
+    
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'error' }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <!-- Statistics -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number">{{ users|length }}</div>
+                <div class="stat-label">Total de Usuários</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ users|selectattr('documents_generated', '>=', 5)|list|length }}</div>
+                <div class="stat-label">Usuários no Limite Demo</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{ users|sum(attribute='documents_generated') }}</div>
+                <div class="stat-label">Total de Documentos</div>
+            </div>
+        </div>
+        
+        <!-- Create User Form -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Criar Novo Usuário</h2>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('admin.create_user') }}">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="username">Nome de Usuário:</label>
+                            <input type="text" id="username" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="email">Email:</label>
+                            <input type="email" id="email" name="email" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Senha:</label>
+                            <input type="password" id="password" name="password" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Criar Usuário</button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Users Table -->
+        <div class="card">
+            <div class="card-header">
+                <h2>Gerenciar Usuários</h2>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Usuário</th>
+                            <th>Email</th>
+                            <th>Documentos</th>
+                            <th>Mensagens Chat</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>{{ user.documents_generated }}/5</td>
+                            <td>{{ user.chat_messages_sent }}/5</td>
+                            <td>
+                                {% if user.documents_generated >= 5 %}
+                                    <span class="badge badge-danger">Limite Atingido</span>
+                                {% elif user.documents_generated >= 3 %}
+                                    <span class="badge badge-warning">Próximo ao Limite</span>
+                                {% else %}
+                                    <span class="badge badge-success">Ativo</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="actions">
+                                    <button class="btn btn-warning btn-sm edit-user-btn" 
+                                            data-user-id="{{ user.id }}" 
+                                            data-username="{{ user.username }}" 
+                                            data-email="{{ user.email }}">Editar</button>
+                                    <form method="POST" action="{{ url_for('admin.reset_user_counters', user_id=user.id) }}" 
+                                          style="display: inline;" 
+                                          onsubmit="return confirm('Resetar contadores do usuário {{ user.username }}?')">
+                                        <button type="submit" class="btn btn-success btn-sm">Reset</button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}" 
+                                          style="display: inline;" 
+                                          onsubmit="return confirm('Tem certeza que deseja remover o usuário {{ user.username }}?')">
+                                        <button type="submit" class="btn btn-danger btn-sm">Excluir</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: #666;">Nenhum usuário encontrado</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit User Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeEditModal()">&times;</span>
+            <h2>Editar Usuário</h2>
+            <form id="editForm" method="POST">
+                <div class="form-group">
+                    <label for="edit_username">Nome de Usuário:</label>
+                    <input type="text" id="edit_username" name="username">
+                </div>
+                <div class="form-group">
+                    <label for="edit_email">Email:</label>
+                    <input type="email" id="edit_email" name="email">
+                </div>
+                <div class="form-group">
+                    <label for="edit_password">Nova Senha (deixe em branco para manter):</label>
+                    <input type="password" id="edit_password" name="password">
+                </div>
+                <div style="margin-top: 1rem;">
+                    <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+                    <button type="button" onclick="closeEditModal()" class="btn" style="background: #6c757d; color: white;">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        // Handle edit button clicks
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.edit-user-btn').forEach(function(button) {
+                button.addEventListener('click', function() {
+                    const userId = this.getAttribute('data-user-id');
+                    const username = this.getAttribute('data-username');
+                    const email = this.getAttribute('data-email');
+                    openEditModal(userId, username, email);
+                });
+            });
+        });
+        
+        function openEditModal(userId, username, email) {
+            document.getElementById('editForm').action = `/administracao/users/${userId}/edit`;
+            document.getElementById('edit_username').value = username;
+            document.getElementById('edit_email').value = email;
+            document.getElementById('edit_password').value = '';
+            document.getElementById('editModal').style.display = 'block';
+        }
+        
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('editModal');
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
