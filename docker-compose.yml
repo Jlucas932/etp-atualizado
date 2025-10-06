@@ -53,6 +53,8 @@ services:
       
       # Logging
       - LOG_LEVEL=${LOG_LEVEL:-DEBUG}
+      - METRICS_TOKEN=${METRICS_TOKEN:-dev_metrics_token}
+      - LOG_DIR=${LOG_DIR:-/opt/az/logs}
     
     volumes:
       # Código (read-write para hot-reload)
@@ -176,3 +178,9 @@ volumes:
 networks:
   autodoc-network:
     driver: bridge
+
+# Para produção:
+# - Defina FLASK_DEBUG=0 e DEBUG=False
+# - Restrinja CORS_ORIGINS à(s) origem(ns) do front-end
+# - Defina METRICS_TOKEN com um valor forte
+# - Garanta volume de logs persistente (./logs:/opt/az/logs)
