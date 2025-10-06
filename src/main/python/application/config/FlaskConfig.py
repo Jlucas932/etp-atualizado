@@ -37,7 +37,7 @@ def validate_environment_variables():
 def get_config_values():
     """Retorna valores de configuração validados (multi-SGBD compatível)"""
     return {
-        'db_vendor': os.getenv('DB_VENDOR', 'generic'),
+        'db_vendor': os.getenv('DB_VENDOR', 'postgresql'),
         'database_url': os.environ['DATABASE_URL'],
         'embeddings_provider': os.getenv('EMBEDDINGS_PROVIDER', 'openai'),
         'lexml_timeout': int(os.getenv('LEXML_TIMEOUT_SECONDS', '8')),
