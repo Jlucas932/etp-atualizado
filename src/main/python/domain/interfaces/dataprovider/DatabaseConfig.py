@@ -107,20 +107,23 @@ def init_database(app, basedir):
             db.create_all()
             logging.info("✅ Tabelas criadas com sucesso!")
         else:
-            logging.info("ℹ️  DB_CREATE_ALL desabilitado para dialeto '%s' - assumindo migrações gerenciadas externamente.", dialect)
+            logging.info(
+                "ℹ️  DB_CREATE_ALL desabilitado para dialeto '%s' — assumindo migrações gerenciadas externamente.",
+                dialect,
+            )
 
         if seed_flag:
             logging.info("🌱 Populando usuários demo (SEED_DEMO_USERS habilitado)")
             seed_demo_users()
         else:
-            logging.info("ℹ️  SEED_DEMO_USERS desabilitado - nenhuma seed executada.")
+            logging.info("ℹ️  SEED_DEMO_USERS desabilitado — nenhuma seed executada.")
 
     logging.info("✅ Banco de dados configurado com sucesso!")
     
     return db
 
 def seed_demo_users():
-    """Popula o banco com os usuários demo pré-definidos"""
+    """Popula o banco com usuários demo seguros."""
     from domain.dto.UserDto import User
     from werkzeug.security import generate_password_hash
 
@@ -149,5 +152,5 @@ def seed_demo_users():
         db.session.commit()
         logging.info("✅ Usuários demo criados/atualizados com sucesso.")
     else:
-        logging.info("ℹ️  Usuários demo já existentes - nenhuma alteração realizada.")
+        logging.info("ℹ️  Usuários demo já existentes — nenhuma alteração realizada.")
 
