@@ -1,4 +1,5 @@
 import os
+import logging
 from flask_sqlalchemy import SQLAlchemy
 from domain.usecase.utils.security_utils import mask_database_url
 
@@ -37,50 +38,55 @@ def init_database(app, basedir):
     # Configurar URI do banco
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    
+
     # Configurar opções de engine (pool de conexões)
-    engine_options = {}
-    
+    engine_options = app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {}).copy()
+
     # Pool size (número de conexões persistentes)
-    pool_size = int(os.getenv('DB_POOL_SIZE', '5'))
+    pool_size = int(os.getenv('DB_POOL_SIZE', str(engine_options.get('pool_size', 5))))
     engine_options['pool_size'] = pool_size
-    
+
     # Max overflow (conexões adicionais temporárias)
-    max_overflow = int(os.getenv('DB_MAX_OVERFLOW', '10'))
+    max_overflow = int(os.getenv('DB_MAX_OVERFLOW', str(engine_options.get('max_overflow', 10))))
     engine_options['max_overflow'] = max_overflow
-    
+
     # Pool recycle (segundos antes de reciclar conexão)
-    pool_recycle = int(os.getenv('DB_POOL_RECYCLE', '3600'))
+    pool_recycle = int(os.getenv('DB_POOL_RECYCLE', str(engine_options.get('pool_recycle', 3600))))
     engine_options['pool_recycle'] = pool_recycle
-    
-    # Pool pre-ping (testa conexão antes de usar)
-    # Essencial para evitar conexões "stale" em ambientes com firewalls/proxies
-    pool_pre_ping = os.getenv('DB_POOL_PRE_PING', 'true').lower() in ('true', '1', 'yes')
-    engine_options['pool_pre_ping'] = pool_pre_ping
-    
+
+    # Garantir opções essenciais independentemente de env
+    engine_options['pool_pre_ping'] = True
+    engine_options['future'] = True
+
     # Configurações específicas por dialeto
     if dialect == 'sqlite':
         # SQLite não suporta pool, desabilitar
         engine_options['pool_pre_ping'] = False
         engine_options.pop('pool_size', None)
         engine_options.pop('max_overflow', None)
-        print(f"✅ Configurando SQLite: {mask_database_url(database_url)}")
+        logging.info("✅ Configurando SQLite: %s", mask_database_url(database_url))
     elif dialect in ('postgresql', 'postgres'):
-        print(f"✅ Configurando PostgreSQL: {mask_database_url(database_url)}")
+        logging.info("✅ Configurando PostgreSQL: %s", mask_database_url(database_url))
     elif dialect == 'mysql':
-        print(f"✅ Configurando MySQL: {mask_database_url(database_url)}")
+        logging.info("✅ Configurando MySQL: %s", mask_database_url(database_url))
     elif dialect == 'mssql':
-        print(f"✅ Configurando SQL Server: {mask_database_url(database_url)}")
+        logging.info("✅ Configurando SQL Server: %s", mask_database_url(database_url))
     else:
-        print(f"⚠️  Dialeto desconhecido '{dialect}', usando configuração genérica")
+        logging.warning("⚠️  Dialeto desconhecido '%s', usando configuração genérica", dialect)
     
     # Aplicar engine options
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
-    
+
     # Log de configuração de pool (sem expor credenciais)
     if dialect != 'sqlite':
-        print(f"   Pool: size={pool_size}, overflow={max_overflow}, "
-              f"recycle={pool_recycle}s, pre_ping={pool_pre_ping}")
+        logging.info(
+            "   Pool: size=%s, overflow=%s, recycle=%ss, pre_ping=%s, future=%s",
+            engine_options.get('pool_size'),
+            engine_options.get('max_overflow'),
+            engine_options.get('pool_recycle'),
+            engine_options.get('pool_pre_ping'),
+            engine_options.get('future'),
+        )
     
     # Inicializar banco
     db.init_app(app)
@@ -93,13 +99,13 @@ def init_database(app, basedir):
     
     with app.app_context():
         # Criar todas as tabelas usando SQLAlchemy (sem Liquibase)
-        print("🔧 Criando tabelas usando SQLAlchemy...")
+        logging.info("🔧 Criando tabelas usando SQLAlchemy...")
         db.create_all()
-        print("✅ Tabelas criadas com sucesso!")
-        
+        logging.info("✅ Tabelas criadas com sucesso!")
+
         seed_demo_users()
-    
-    print(f"✅ Banco de dados configurado com sucesso!")
+
+    logging.info("✅ Banco de dados configurado com sucesso!")
     
     return db
 

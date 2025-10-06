@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 # Load environment variables before any other imports
 load_dotenv()
 
+# Garantir que o diretório de logs exista antes de configurarmos os handlers
+os.makedirs('logs', exist_ok=True)
+
 def validate_environment_variables():
     """Valida as variáveis de ambiente obrigatórias - PostgreSQL apenas"""
     required_vars = {
@@ -210,17 +213,25 @@ def create_api():
         if cors_origins == '*':
             # Modo permissivo (desenvolvimento)
             logging.warning("⚠️  CORS configurado para aceitar todas as origens (*) - NÃO recomendado para produção!")
-            CORS(app, origins="*", supports_credentials=True)
+            CORS(
+                app,
+                origins="*",
+                supports_credentials=True,
+                allow_headers=['Content-Type', 'Authorization'],
+                methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+            )
         else:
             # Modo restritivo (produção)
             # Formato: "https://app.example.com,https://admin.example.com"
-            origins_list = [origin.strip() for origin in cors_origins.split(',')]
+            origins_list = [origin.strip() for origin in cors_origins.split(',') if origin.strip()]
             logging.info(f"✅ CORS configurado para origens específicas: {origins_list}")
-            CORS(app, 
-                 origins=origins_list,
-                 supports_credentials=True,
-                 allow_headers=['Content-Type', 'Authorization'],
-                 methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
+            CORS(
+                app,
+                origins=origins_list,
+                supports_credentials=True,
+                allow_headers=['Content-Type', 'Authorization'],
+                methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+            )
     else:
         logging.info("ℹ️  CORS não configurado (CORS_ORIGINS não definido)")
     
@@ -247,7 +258,10 @@ def create_api():
         'max_overflow': max_overflow,
         'pool_recycle': pool_recycle,
     }
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = engine_options
+    # Merge com opções já existentes para evitar sobrescrever configurações definidas em init_database
+    existing_engine_options = app.config.get('SQLALCHEMY_ENGINE_OPTIONS', {})
+    existing_engine_options.update(engine_options)
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = existing_engine_options
 
     database_url = os.getenv('DATABASE_URL')
     if database_url:
