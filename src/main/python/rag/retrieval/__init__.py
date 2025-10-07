@@ -7,21 +7,18 @@ Pacote de retrieval unificado.
 - FAISS segue opcional; se não instalado, BM25 permanece como fallback.
 """
 
-# Reexporta API pública do módulo 'hybrid' (antigo retrieval.py)
 from .hybrid import (
     RAGRetrieval,
     get_retrieval_instance,
     search_requirements,
     build_indices,
     search_legal,
-    # ↳ adicione aqui quaisquer outros símbolos públicos que antes vinham de rag.retrieval
 )
 
-# Exporta FaissIndex se disponível (não obrigatório)
+# Exporta FaissIndex se disponível (opcional)
 try:
     from .faiss_index import FaissIndex  # noqa: F401
-except Exception:  # pragma: no cover - módulo opcional
-    # FAISS não instalado → sem erro; pacote segue funcional via BM25
+except Exception:  # pragma: no cover
     FaissIndex = None  # type: ignore[assignment]
 
 __all__ = [

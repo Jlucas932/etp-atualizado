@@ -1,8 +1,9 @@
 import logging
 import os
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from domain.interfaces.dataprovider.DatabaseConfig import db
+
 from .liquibase_config import executa_liquibase
 
 
@@ -86,7 +87,7 @@ def configurar_tabelas_sqlalchemy():
         raise
 
 
-def verificar_status_migracao() -> Dict[str, any]:
+def verificar_status_migracao() -> Dict[str, Any]:
     """
     Verifica o status das migrações e tabelas
     Retorna informações sobre o estado atual do banco
@@ -108,7 +109,7 @@ def verificar_status_migracao() -> Dict[str, any]:
                     from sqlalchemy import text
                     result = connection.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1"))
                     status['tables_exist'][table_name] = True
-                except:
+                except Exception:
                     status['tables_exist'][table_name] = False
         
         # Verificar se todas as tabelas KB existem

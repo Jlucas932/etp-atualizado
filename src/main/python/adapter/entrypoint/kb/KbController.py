@@ -92,7 +92,12 @@ def process_single_pdf(file, objective_slug):
             db.session.add(kb_chunk)
             chunk_count += 1
         
-        logger.info(f"Processed PDF: {filename} - Document ID: {kb_doc.id} - Chunks: {chunk_count}")
+        logger.info(
+            "Processed PDF: %s - Document ID: %s - Chunks: %s",
+            filename,
+            kb_doc.id,
+            chunk_count,
+        )
         
         return {
             'filename': filename,
@@ -144,7 +149,12 @@ def upload_pdf():
                 return jsonify({"error": str(ve)}), 400
             except Exception as e:
                 db.session.rollback()
-                logger.error(f"Erro ao processar arquivo {f.filename}: {e}")
+                logger.error(
+                    "Erro ao processar arquivo %s: %s",
+                    f.filename,
+                    e,
+                    exc_info=True,
+                )
                 return jsonify({"error": f"Erro ao processar arquivo {f.filename}"}), 500
         
         db.session.commit()
@@ -153,7 +163,7 @@ def upload_pdf():
         
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Erro no upload de PDFs: {e}")
+        logger.error("Erro no upload de PDFs: %s", e, exc_info=True)
         return jsonify({"error": "Erro interno do servidor"}), 500
 
 @kb_blueprint.route('/documents', methods=['GET'])

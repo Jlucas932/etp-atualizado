@@ -314,6 +314,7 @@ def create_api():
     app.register_blueprint(kb_blueprint)  # KB blueprint already has url_prefix='/api/kb' defined
     app.register_blueprint(admin_bp)  # Admin blueprint already has url_prefix='/administracao' defined
     
+    # Endpoint /metrics para Prometheus (protegido por token) + hooks
     enable_metrics = os.getenv('ENABLE_METRICS', 'true').strip().lower() == 'true'
     if PROMETHEUS_AVAILABLE and enable_metrics:
         @app.route('/metrics')
