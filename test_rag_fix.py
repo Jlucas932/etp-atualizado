@@ -16,7 +16,10 @@ def test_knowledge_base_dto_import():
     """Testa se o KnowledgeBaseDto pode ser importado corretamente"""
     print("🔍 Testando importação do KnowledgeBaseDto...")
     try:
-        from domain.dto.KnowledgeBaseDto import KbDocument, KbChunk, KnowledgeBaseDocument
+        from domain.dto.KbDto import KbDocument, KbChunk
+        from domain.dto import KnowledgeBaseDto as knowledge_base_dto
+
+        KnowledgeBaseDocument = knowledge_base_dto.KnowledgeBaseDocument
         print("✅ KnowledgeBaseDto importado com sucesso")
         
         # Testar criação de KnowledgeBaseDocument

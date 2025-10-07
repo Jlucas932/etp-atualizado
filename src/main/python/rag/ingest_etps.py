@@ -21,7 +21,10 @@ import PyPDF2
 current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
-from domain.dto.KnowledgeBaseDto import KbDocument, KbChunk, KnowledgeBaseDocument
+from domain.dto.KbDto import KbDocument, KbChunk
+import domain.dto.KnowledgeBaseDto as knowledge_base_dto
+
+KnowledgeBaseDocument = knowledge_base_dto.KnowledgeBaseDocument
 from domain.interfaces.dataprovider.DatabaseConfig import db
 
 # Configurar logging
