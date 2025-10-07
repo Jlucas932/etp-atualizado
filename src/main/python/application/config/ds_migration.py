@@ -1,9 +1,12 @@
-import os
-from typing import List, Dict
 import logging
+import os
+from typing import Dict, List
 
 from domain.interfaces.dataprovider.DatabaseConfig import db
 from .liquibase_config import executa_liquibase
+
+
+logger = logging.getLogger(__name__)
 
 
 def configurar_migracoes():
@@ -12,36 +15,39 @@ def configurar_migracoes():
     Esta função é chamada na inicialização da aplicação
     """
     try:
-        print("Iniciando configuração de migrações...")
+        logger.info("Iniciando configuração de migrações...")
         
         # Verificar se deve executar migrações via Liquibase
         execute_liquibase = os.getenv('EXECUTE_LIQUIBASE', 'true').lower() == 'true'
         db_vendor = os.getenv('DB_VENDOR', 'sqlite')
         
         if execute_liquibase and db_vendor == 'postgresql':
-            print("Executando migrações via Liquibase para PostgreSQL...")
+            logger.info("Executando migrações via Liquibase para PostgreSQL...")
             executa_liquibase()
         else:
-            print(f"Pulando Liquibase. DB_VENDOR={db_vendor}, EXECUTE_LIQUIBASE={execute_liquibase}")
+            logger.info(
+                "Pulando Liquibase. DB_VENDOR=%s, EXECUTE_LIQUIBASE=%s",
+                db_vendor,
+                execute_liquibase
+            )
         
         # Para desenvolvimento com SQLite ou se Liquibase falhar, usar SQLAlchemy
         if db_vendor == 'sqlite' or not execute_liquibase:
-            print("Executando criação de tabelas via SQLAlchemy...")
+            logger.info("Executando criação de tabelas via SQLAlchemy...")
             configurar_tabelas_sqlalchemy()
-            
-        print("Configuração de migrações concluída com sucesso!")
-        
+
+        logger.info("Configuração de migrações concluída com sucesso!")
+
     except Exception as e:
-        logging.error(f"Erro na configuração de migrações: {e}")
-        print(f"ERRO: Falha na configuração de migrações: {e}")
-        
+        logger.error("Erro na configuração de migrações: %s", e, exc_info=True)
+
         # Fallback para SQLAlchemy em caso de erro
-        print("Tentando fallback para SQLAlchemy...")
+        logger.warning("Tentando fallback para SQLAlchemy...")
         try:
             configurar_tabelas_sqlalchemy()
-            print("Fallback para SQLAlchemy executado com sucesso!")
+            logger.info("Fallback para SQLAlchemy executado com sucesso!")
         except Exception as fallback_error:
-            logging.error(f"Erro no fallback SQLAlchemy: {fallback_error}")
+            logger.error("Erro no fallback SQLAlchemy: %s", fallback_error, exc_info=True)
             raise fallback_error
 
 
@@ -54,7 +60,7 @@ def configurar_tabelas_sqlalchemy():
         # Import dos modelos para garantir que estejam registrados
         from domain.dto.EtpDto import EtpSession, DocumentAnalysis, ChatSession, EtpTemplate
         from domain.dto.UserDto import User
-        from domain.dto.KnowledgeBaseDto import KbDocument as OldKbDocument, KbChunk as OldKbChunk
+        from domain.dto.KbDto import KbDocument as OldKbDocument, KbChunk as OldKbChunk
         
         execute_liquibase = os.getenv('EXECUTE_LIQUIBASE', 'true').lower() == 'true'
         db_vendor = os.getenv('DB_VENDOR', 'sqlite')
@@ -69,14 +75,14 @@ def configurar_tabelas_sqlalchemy():
                 if table_name not in tables_to_skip:
                     if not db.engine.dialect.has_table(db.engine.connect(), table_name):
                         table.create(db.engine)
-                        print(f"Tabela criada via SQLAlchemy: {table_name}")
+                        logger.info("Tabela criada via SQLAlchemy: %s", table_name)
         else:
             # Criar todas as tabelas via SQLAlchemy (desenvolvimento/SQLite)
             db.create_all()
-            print("Todas as tabelas criadas via SQLAlchemy")
-            
+            logger.info("Todas as tabelas criadas via SQLAlchemy")
+
     except Exception as e:
-        logging.error(f"Erro na configuração SQLAlchemy: {e}")
+        logger.error("Erro na configuração SQLAlchemy: %s", e, exc_info=True)
         raise
 
 
@@ -110,7 +116,7 @@ def verificar_status_migracao() -> Dict[str, any]:
         status['migration_status'] = 'completed' if all_kb_tables_exist else 'pending'
         
     except Exception as e:
-        logging.error(f"Erro ao verificar status de migração: {e}")
+        logger.error("Erro ao verificar status de migração: %s", e, exc_info=True)
         status['migration_status'] = 'error'
         status['error'] = str(e)
     
@@ -142,5 +148,5 @@ def listar_tabelas_disponiveis() -> List[str]:
             return [row[0] for row in result.fetchall()]
             
     except Exception as e:
-        logging.error(f"Erro ao listar tabelas: {e}")
+        logger.error("Erro ao listar tabelas: %s", e, exc_info=True)
         return []

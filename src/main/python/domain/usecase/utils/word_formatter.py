@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 import re
@@ -11,6 +12,9 @@ from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml.shared import OxmlElement, qn
 from docx.oxml.ns import nsdecls
 from docx.oxml import parse_xml
+
+
+logger = logging.getLogger(__name__)
 
 class ProfessionalWordFormatter:
     """Formatador profissional de documentos Word para ETP"""
@@ -385,7 +389,7 @@ class ProfessionalWordFormatter:
             sectPr.append(pgBorders)
         except Exception as e:
             # Se não conseguir aplicar bordas, continuar sem elas
-            print(f"Aviso: Não foi possível aplicar bordas da página: {e}")
+            logger.warning("Aviso: Não foi possível aplicar bordas da página: %s", e, exc_info=True)
     
     def _add_footer(self, doc: Document):
         """Adiciona rodapé com numeração de páginas"""

@@ -66,6 +66,10 @@ WORKDIR /opt/az
 # Copia código da aplicação
 COPY --chown=appuser:appuser . .
 
+# Logs directory (runtime) com permissões do appuser
+RUN mkdir -p /opt/az/logs && \
+    chown -R appuser:appuser /opt/az/logs
+
 # Muda para usuário não-root
 USER appuser
 

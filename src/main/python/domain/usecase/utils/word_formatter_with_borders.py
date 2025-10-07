@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 import re
@@ -11,6 +12,9 @@ from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.shared import OxmlElement, qn
 from docx.oxml.ns import nsdecls
 from docx.oxml import parse_xml
+
+
+logger = logging.getLogger(__name__)
 
 class WordFormatterWithBorders:
     """Formatador Word com bordas baseado no modelo da concorrência"""
@@ -494,7 +498,7 @@ class WordFormatterWithBorders:
             
             sectPr.append(pgBorders)
         except Exception as e:
-            print(f"Aviso: Não foi possível aplicar bordas ao documento: {e}")
+            logger.warning("Aviso: Não foi possível aplicar bordas ao documento: %s", e, exc_info=True)
     
     def _add_footer_with_info(self, doc: Document):
         """Adiciona rodapé com informações"""

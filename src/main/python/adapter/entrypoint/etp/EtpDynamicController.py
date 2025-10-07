@@ -669,7 +669,7 @@ def etp_conversation():
             return jsonify({'error': 'Gerador ETP não configurado'}), 500
 
         data = request.get_json()
-        print("🔹 Recebi do frontend:", data)
+        logger.debug("🔹 Recebi do frontend: %s", data)
 
         user_message = data.get('message', '').strip()
         session_id = data.get('session_id')
@@ -699,8 +699,16 @@ def etp_conversation():
         # PASSO 2A: Base de resposta com session_id
         resp_base = {"success": True, "session_id": session.session_id}
         
-        print(f"🔹 [ANTES] Sessão: {session.session_id}, estágio: {session.conversation_stage}, necessidade: {bool(session.necessity)}")
-        print(f"🔹 [INPUT] Mensagem: '{user_message[:50]}{'...' if len(user_message) > 50 else '}'}")
+        logger.debug(
+            "🔹 [ANTES] Sessão: %s, estágio: %s, necessidade_definida=%s",
+            session.session_id,
+            session.conversation_stage,
+            bool(session.necessity)
+        )
+        logger.debug(
+            "🔹 [INPUT] Mensagem: '%s'",
+            f"{user_message[:50]}{'...' if len(user_message) > 50 else ''}"
+        )
 
         # PASSO 3: Interpretador de comandos ANTES do LLM
         if session.conversation_stage in ['suggest_requirements', 'review_requirements']:
@@ -709,7 +717,7 @@ def etp_conversation():
             current_requirements = session.get_requirements()
             command_result = parse_update_command(user_message, current_requirements)
             
-            print(f"🔹 Comando parseado: {command_result}")
+            logger.debug("🔹 Comando parseado: %s", command_result)
             
             if command_result['intent'] == 'restart_necessity':
                 # Reset session to collect new necessity
@@ -758,10 +766,14 @@ def etp_conversation():
             
             # PASSO 5: Use safe analyzer - NO fallback suicida
             contains_need, need_description = analyze_need_safely(user_message, etp_generator.client)
-            print(f"🔹 [ANALYZER] contains_need={contains_need}, description='{need_description or 'None'}'")
+            logger.debug(
+                "🔹 [ANALYZER] contains_need=%s, description='%s'",
+                contains_need,
+                need_description or 'None'
+            )
 
             if contains_need and need_description:
-                print(f"🔹 [LOCK] Necessidade identificada e travada: {need_description}")
+                logger.info("🔹 [LOCK] Necessidade identificada e travada: %s", need_description)
                 
                 # PASSO 2B: LOCK NECESSITY and advance stage
                 session.necessity = need_description
@@ -769,7 +781,11 @@ def etp_conversation():
                 session.updated_at = datetime.utcnow()
                 db.session.commit()
                 
-                print(f"🔹 [DEPOIS] Sessão: {session.session_id}, estágio: {session.conversation_stage}")
+                logger.debug(
+                    "🔹 [DEPOIS] Sessão: %s, estágio: %s",
+                    session.session_id,
+                    session.conversation_stage
+                )
 
                 # Generate requirements using existing logic
                 try:
@@ -850,12 +866,15 @@ def etp_conversation():
                     })
                         
                 except Exception as suggest_error:
-                    print(f"🔸 Erro ao sugerir requisitos: {suggest_error}")
+                    logger.error("🔸 Erro ao sugerir requisitos: %s", suggest_error, exc_info=True)
                     # If requirements generation fails, return error instead of continuing
                     return jsonify({"error": f"Erro ao sugerir requisitos: {str(suggest_error)}"}), 500
-            
+
             # PASSO 5: If necessity not detected, ask for it (NO fallback suicida)
-            print(f"🔹 [NO_LOCK] contains_need=False ou parse falhou → mantendo necessidade atual: {session.necessity}")
+            logger.debug(
+                "🔹 [NO_LOCK] contains_need=False ou parse falhou → mantendo necessidade atual: %s",
+                session.necessity
+            )
             return jsonify({
                 **resp_base,
                 'kind': 'text',
@@ -928,7 +947,7 @@ Não repita informações já coletadas."""
         })
 
     except Exception as e:
-        print(f"🔸 Erro na conversa: {e}")
+        logger.error("🔸 Erro na conversa: %s", e, exc_info=True)
         return jsonify({
             'success': False,
             'error': f'Erro na conversa: {str(e)}'
@@ -963,7 +982,10 @@ def analyze_response():
 
         # PASSO 7: Não rodar analisador de necessidade em estágios de revisão
         if session.conversation_stage in ['suggest_requirements', 'review_requirements']:
-            print(f"🔹 analyze_response: Estágio {session.conversation_stage} - não executando analisador de necessidade")
+            logger.debug(
+                "🔹 analyze_response: Estágio %s - não executando analisador de necessidade",
+                session.conversation_stage
+            )
             return jsonify({
                 **resp_base,
                 'kind': 'text',
@@ -1121,11 +1143,14 @@ def confirm_requirements():
             # Usuário aceitou todos os requisitos
             confirmed_requirements = requirements
             ai_response = f"**Perfeito! Requisitos confirmados.**\n\n{next_question}"
-            print(f"🔹 Usuário aceitou os requisitos: {len(confirmed_requirements)} requisitos confirmados")
+            logger.info(
+                "🔹 Usuário aceitou os requisitos: %s requisitos confirmados",
+                len(confirmed_requirements)
+            )
 
         elif user_action == 'modify':
             # Usuário quer modificar alguns requisitos
-            print(f"🔹 Usuário solicitou modificação nos requisitos: {user_message}")
+            logger.info("🔹 Usuário solicitou modificação nos requisitos: %s", user_message)
             modify_prompt = f"""
             O usuário quer modificar os requisitos sugeridos. Processe a solicitação:
 
@@ -1164,6 +1189,7 @@ def confirm_requirements():
             # Ação não reconhecida - manter requisitos originais
             confirmed_requirements = requirements
             ai_response = f"**Requisitos mantidos.**\n\n{next_question}"
+            logger.debug("🔹 Ação não reconhecida ao confirmar requisitos. Mantendo originais.")
 
         # Armazenar requisitos confirmados na sessão
         answers = session.get_answers()

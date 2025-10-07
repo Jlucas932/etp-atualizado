@@ -140,7 +140,7 @@ class DynamicEtpGenerator:
             
             return template_data['etp_template']
         except Exception as e:
-            print(f"Erro ao carregar template ETP: {str(e)}")
+            self.logger.error("Erro ao carregar template ETP: %s", e, exc_info=True)
             # Retorna estrutura básica em caso de erro
             return {str(i): {"titulo": f"Seção {i}", "conteudo": ""} for i in range(1, 15)}
     

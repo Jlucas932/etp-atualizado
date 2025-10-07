@@ -32,7 +32,7 @@ def extract_text_from_pdf(file_path):
                 if page_text:  # Skip pages with no text
                     text.append(page_text)
     except Exception as e:
-        print(f"Erro ao extrair texto do PDF: {e}")
+        logger.error("Erro ao extrair texto do PDF: %s", e, exc_info=True)
         return None
     return "\n".join(text) if text else None
 
@@ -173,7 +173,7 @@ def list_documents():
         }), 200
         
     except Exception as e:
-        print(f"Erro ao listar documentos: {e}")
+        logger.error("Erro ao listar documentos: %s", e, exc_info=True)
         return jsonify({'error': 'Erro interno do servidor'}), 500
 
 @kb_blueprint.route('/search', methods=['POST'])
@@ -204,7 +204,7 @@ def search_chunks():
         }), 200
         
     except Exception as e:
-        print(f"Erro na busca de chunks: {e}")
+        logger.error("Erro na busca de chunks: %s", e, exc_info=True)
         return jsonify({'error': 'Erro interno do servidor'}), 500
 
 @kb_blueprint.route('/health', methods=['GET'])
@@ -222,5 +222,5 @@ def health_check():
         }), 200
         
     except Exception as e:
-        print(f"Erro no health check KB: {e}")
+        logger.error("Erro no health check KB: %s", e, exc_info=True)
         return jsonify({'error': 'Erro interno do servidor'}), 500

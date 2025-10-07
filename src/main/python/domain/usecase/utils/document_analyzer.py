@@ -1,8 +1,12 @@
+import logging
 import os
 import re
 import json
 from typing import Dict, List, Tuple, Optional, Any
 import openai
+
+
+logger = logging.getLogger(__name__)
 
 class AdvancedDocumentAnalyzer:
     """Analisador avançado de documentos para extração de informações de ETP"""
@@ -544,10 +548,10 @@ class AdvancedDocumentAnalyzer:
                     return {}
                     
             except Exception as e:
-                print(f"Erro na API OpenAI: {e}")
+                logger.error("Erro na API OpenAI: %s", e, exc_info=True)
                 return {}
-                
+
         except Exception as e:
-            print(f"Erro geral em extract_etp_answers: {e}")
+            logger.error("Erro geral em extract_etp_answers: %s", e, exc_info=True)
             return {}
 
