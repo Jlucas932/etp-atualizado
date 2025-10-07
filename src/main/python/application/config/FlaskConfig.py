@@ -139,6 +139,10 @@ def auto_load_knowledge_base():
     Esta função deve ser chamada após a inicialização do banco de dados.
     """
     try:
+        if not os.path.exists("knowledge/etps/parsed"):
+            logging.warning("📁 Diretório 'knowledge/etps/parsed' não encontrado — auto_load_knowledge_base ignorado.")
+            return False
+
         # Verificar se existem documentos na base
         document_count = db.session.query(KbDocument).count()
         chunk_count = db.session.query(KbChunk).count()
@@ -321,8 +325,12 @@ def create_api():
         def metrics():
             metrics_token = os.getenv('METRICS_TOKEN')
             if not metrics_token:
-                logging.error("METRICS_TOKEN não configurado - negando acesso ao /metrics")
-                return {"error": "METRICS token not configured"}, 503
+                if os.getenv("FLASK_ENV", "").lower() == "development" or os.getenv("DEBUG", "0").lower() in {"1", "true", "yes"}:
+                    metrics_token = "dev_default_token"
+                    logging.warning("⚠️ METRICS_TOKEN não definido — usando token temporário 'dev_default_token' em ambiente de desenvolvimento.")
+                else:
+                    logging.error("METRICS_TOKEN não configurado - negando acesso ao /metrics (produção)")
+                    return {"error": "METRICS token not configured"}, 503
 
             auth_header = request.headers.get('Authorization', '')
             if not auth_header.startswith('Bearer '):

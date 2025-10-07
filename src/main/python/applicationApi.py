@@ -9,6 +9,12 @@ from dotenv import load_dotenv
 # Carregar variáveis de ambiente antes de inicializar o app
 load_dotenv()
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger("AutoDocIA")
+
 from application.config.FlaskConfig import create_api  # noqa: E402
 
 # Alias utilizado pelo Gunicorn (applicationApi:app)
@@ -76,8 +82,6 @@ except Exception:  # pragma: no cover - garantimos que a exceção seja propagad
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger(__name__)
-
     api_key = _enforce_valid_openai_key()
 
     logger.info("🚀 Iniciando servidor ETP Sistema Padronizado (Docker)...")
