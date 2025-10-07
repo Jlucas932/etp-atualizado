@@ -62,6 +62,7 @@ COPY --from=builder --chown=appuser:appuser /build/venv /opt/venv
 
 # Define diretório de trabalho
 WORKDIR /opt/az
+ENV PYTHONPATH="/opt/az/src/main/python:${PYTHONPATH}"
 
 # Copia código da aplicação
 COPY --chown=appuser:appuser . .
@@ -88,4 +89,4 @@ ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["gunicorn", \
      "--config", "gunicorn.conf.py", \
      "--bind", "0.0.0.0:5002", \
-     "src.main.python.applicationApi:app"]
+     "applicationApi:app"]

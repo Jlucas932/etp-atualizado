@@ -563,3 +563,4 @@ def search_legal(objective_slug: str, query: str, k: int = 8) -> List[Dict]:
     """Função de conveniência para busca de normas legais"""
     retrieval = get_retrieval_instance()
     return retrieval.search_legal(objective_slug, query, k)
+
