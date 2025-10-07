@@ -1,8 +1,12 @@
 import configparser
+import logging
 import os
 from typing import Dict, Any
 
 from domain.interfaces.dataprovider.DatabaseConfig import db
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_configuracao_liquibase() -> Dict[str, Any]:
@@ -45,7 +49,7 @@ def pre_liquibase_callback_conexao(sql_criador_de_schema: str):
             connection.execute(sql_criador_de_schema)
             connection.commit()
     except Exception as e:
-        print(f"Erro ao executar callback pré-Liquibase: {e}")
+        logger.error("Erro ao executar callback pré-Liquibase: %s", e, exc_info=True)
         raise
 
 
@@ -72,13 +76,13 @@ def executa_liquibase() -> None:
             )
         
         liquibase.execute('update')
-        print("Migrações Liquibase executadas com sucesso!")
-        
+        logger.info("Migrações Liquibase executadas com sucesso!")
+
     except ImportError:
-        print("AVISO: hal_pyliquibase não encontrado. Pulando migrações Liquibase.")
-        print("Para habilitar migrações, instale: pip install hal_pyliquibase")
+        logger.warning("AVISO: hal_pyliquibase não encontrado. Pulando migrações Liquibase.")
+        logger.info("Para habilitar migrações, instale: pip install hal_pyliquibase")
     except Exception as e:
-        print(f"Erro na execução do Liquibase: {e}")
+        logger.error("Erro na execução do Liquibase: %s", e, exc_info=True)
         raise
     finally:
         if 'path_config_liquibase' in locals():
@@ -117,4 +121,4 @@ def remover_configuracoes_liquibase(path_config_liquibase: str):
         try:
             os.remove(path_config_liquibase)
         except Exception as e:
-            print(f"Erro ao remover configuração do Liquibase: {e}")
+            logger.error("Erro ao remover configuração do Liquibase: %s", e, exc_info=True)

@@ -51,7 +51,7 @@ from flask import Flask, send_from_directory, request, Response
 from flask_cors import CORS
 from application.config.LimiterConfig import limiter
 from domain.interfaces.dataprovider.DatabaseConfig import init_database, db
-from domain.dto.KnowledgeBaseDto import KbDocument, KbChunk
+from domain.dto.KbDto import KbDocument, KbChunk
 from domain.usecase.utils.security_utils import mask_database_url
 from rag.ingest_etps import ETPIngestor
 import time
@@ -314,55 +314,51 @@ def create_api():
     app.register_blueprint(kb_blueprint)  # KB blueprint already has url_prefix='/api/kb' defined
     app.register_blueprint(admin_bp)  # Admin blueprint already has url_prefix='/administracao' defined
     
-    # Endpoint /metrics para Prometheus (protegido por token)
-    @app.route('/metrics')
-    def metrics():
-        if not PROMETHEUS_AVAILABLE:
-            return {"error": "Prometheus metrics not available"}, 503
+    enable_metrics = os.getenv('ENABLE_METRICS', 'true').strip().lower() == 'true'
+    if PROMETHEUS_AVAILABLE and enable_metrics:
+        @app.route('/metrics')
+        def metrics():
+            metrics_token = os.getenv('METRICS_TOKEN')
+            if not metrics_token:
+                logging.error("METRICS_TOKEN não configurado - negando acesso ao /metrics")
+                return {"error": "METRICS token not configured"}, 503
 
-        metrics_token = os.getenv('METRICS_TOKEN')
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                return {"error": "Unauthorized"}, 401
 
-        if not metrics_token:
-            logging.error("METRICS_TOKEN não configurado - negando acesso ao /metrics")
-            return {"error": "METRICS token not configured"}, 503
+            token = auth_header[7:]
+            if token != metrics_token:
+                return {"error": "Unauthorized"}, 401
 
-        # Verificar token de autorização
-        auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            return {"error": "Unauthorized"}, 401
+            return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
-        token = auth_header[7:]
-        if token != metrics_token:
-            return {"error": "Unauthorized"}, 401
-
-        # Retornar métricas
-        return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
-    
-    # Hooks para coletar métricas
-    if PROMETHEUS_AVAILABLE:
         @app.before_request
-        def before_request_metrics():
+        def _metrics_before_request():
             request._start_time = time.time()
-        
+
         @app.after_request
-        def after_request_metrics(response):
+        def _metrics_after_request(response):
             if hasattr(request, '_start_time'):
                 duration = time.time() - request._start_time
                 endpoint = request.endpoint or request.path or 'unknown'
-                
-                # Registrar métricas
                 http_requests_total.labels(
                     method=request.method,
                     endpoint=endpoint,
                     status=response.status_code
                 ).inc()
-                
                 http_request_duration_seconds.labels(
                     method=request.method,
                     endpoint=endpoint
                 ).observe(duration)
-            
             return response
+
+        logging.info("✅ Métricas Prometheus habilitadas.")
+    else:
+        if not PROMETHEUS_AVAILABLE:
+            logging.info("ℹ️ Métricas desabilitadas: pacote prometheus_client não instalado.")
+        elif not enable_metrics:
+            logging.info("ℹ️ Métricas desabilitadas por ENABLE_METRICS=false.")
     
     # Servir arquivos estáticos
     @app.route('/', defaults={'path': ''})

@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import logging
 from datetime import datetime
 from io import BytesIO
 from flask import Blueprint, request, jsonify, send_file, session
@@ -11,6 +12,8 @@ from domain.dto.EtpDto import EtpSession
 from domain.dto.UserDto import User
 
 etp_bp = Blueprint('etp', __name__)
+
+logger = logging.getLogger(__name__)
 
 def check_authentication_and_limits(limit_type='document'):
     """Verifica se o usuário está autenticado e dentro dos limites da demo"""
@@ -637,8 +640,14 @@ def download_document(session_id):
             return jsonify({'error': 'ETP não foi gerado ainda. Execute "Gerar Documento Final" primeiro.'}), 400
         
         # Debug: verificar conteúdo do ETP
-        print(f"[DEBUG] ETP Content length: {len(etp_session.generated_etp) if etp_session.generated_etp else 0}")
-        print(f"[DEBUG] ETP Content preview: {etp_session.generated_etp[:200] if etp_session.generated_etp else 'None'}...")
+        logger.debug(
+            "[DEBUG] ETP Content length: %s",
+            len(etp_session.generated_etp) if etp_session.generated_etp else 0
+        )
+        logger.debug(
+            "[DEBUG] ETP Content preview: %s...",
+            etp_session.generated_etp[:200] if etp_session.generated_etp else 'None'
+        )
         
         # Verificar se o status permite download
         if etp_session.status not in ['completed', 'preview_approved', 'preview_generated']:
@@ -667,7 +676,7 @@ def download_document(session_id):
             if file_size == 0:
                 raise ValueError("Arquivo Word está vazio")
             
-            print(f"[DEBUG] Created Word file: {doc_path}, size: {file_size} bytes")
+            logger.debug("[DEBUG] Created Word file: %s, size: %s bytes", doc_path, file_size)
             
             # Ler o arquivo criado para buffer
             with open(doc_path, 'rb') as f:

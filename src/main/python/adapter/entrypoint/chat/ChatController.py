@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session
 from flask_cors import cross_origin
@@ -15,6 +16,8 @@ from domain.services.requirements_interpreter import (
 )
 
 chat_bp = Blueprint('chat', __name__)
+
+logger = logging.getLogger(__name__)
 
 # Configurar cliente OpenAI
 openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -42,7 +45,7 @@ def search_relevant_chunks(query_text, limit=3):
         
         return chunks
     except Exception as e:
-        print(f"Erro ao buscar chunks relevantes: {e}")
+        logger.error("Erro ao buscar chunks relevantes: %s", e, exc_info=True)
         return []
 
 @chat_bp.route('/health', methods=['GET'])
