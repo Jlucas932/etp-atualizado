@@ -34,7 +34,7 @@ def test_auto_kb_load():
         
         # Importar e criar a aplicação
         from application.config.FlaskConfig import create_api
-        from domain.dto.KnowledgeBaseDto import KbDocument, KbChunk
+        from domain.dto.KbDto import KbDocument, KbChunk
         from domain.interfaces.dataprovider.DatabaseConfig import db
         
         print("📦 Criando aplicação Flask...")
