@@ -17,7 +17,7 @@ def get_configuracao_liquibase() -> Dict[str, Any]:
 
     match = re.match(r'postgresql(\+psycopg2)?://([^:]+):([^@]+)@([^:]+):(\d+)/(.+)', db_url)
     if match:
-        _, username, password, host, port, database = match.groups()
+        _, username, password, host, port, _database = match.groups()
     else:
         raise ValueError(
             "DATABASE_URL deve estar no formato PostgreSQL válido: "
