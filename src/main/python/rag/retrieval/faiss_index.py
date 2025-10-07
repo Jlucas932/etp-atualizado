@@ -17,7 +17,7 @@ class FaissIndex:
         arr = np.asarray(vectors, dtype=np.float32)
         self.index.add(arr)
 
-    def search(self, query_vector, top_n=5):
+    def search(self, query_vector, top_n: int = 5):
         q = np.asarray([query_vector], dtype=np.float32)
         distances, indices = self.index.search(q, int(top_n))
         return list(zip(indices[0], distances[0]))
