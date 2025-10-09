@@ -1,10 +1,8 @@
-// PASSO 1B: Renderização limpa de requisitos (sem JSON cru)
-
 function escapeHtml(text) {
     if (typeof text !== 'string') {
-        return String(text);
+        return String(text ?? '');
     }
-    
+
     const htmlEscapeMap = {
         '&': '&amp;',
         '<': '&lt;',
@@ -13,79 +11,78 @@ function escapeHtml(text) {
         "'": '&#x27;',
         '/': '&#x2F;'
     };
-    
-    return text.replace(/[&<>"'\/]/g, function(s) {
+
+    return text.replace(/[&<>"'/]/g, function (s) {
         return htmlEscapeMap[s];
     });
 }
 
-function renderRequirementsList(items) {
-    if (!Array.isArray(items) || items.length === 0) {
+function renderRequirementsList(requirements, showJustificativa = false) {
+    const items = Array.isArray(requirements) ? requirements.filter(Boolean) : [];
+    if (items.length === 0) {
         return document.createTextNode('Nenhum requisito disponível.');
     }
-    
+
     const ul = document.createElement('ul');
     ul.className = 'requirements-list';
-    
-    items.forEach((item) => {
+
+    items.forEach((text) => {
         const li = document.createElement('li');
         li.className = 'requirement-item';
 
-        const text = item.text || item.requirement || 'Texto não disponível';
-        const showJustificativa = Boolean(item.showJustificativa && item.justification);
+        const span = document.createElement('span');
+        span.textContent = text;
+        li.appendChild(span);
 
-        let innerHtml = `<span>${escapeHtml(text)}</span>`;
-        if (showJustificativa) {
-            innerHtml += `<br><em>Justificativa:</em> ${escapeHtml(item.justification)}`;
+        if (showJustificativa === true) {
+            li.dataset.showJustificativa = 'true';
         }
 
-        li.innerHTML = innerHtml;
         ul.appendChild(li);
     });
-    
+
     return ul;
 }
 
 function renderAssistantMessage(data) {
-    // PASSO 1B: Renderização baseada no campo 'kind'
-    if (data.kind && data.kind.startsWith('requirements_')) {
-        const container = document.createElement('div');
-        container.className = 'requirements-response';
-        
-        if (data.necessity) {
-            const necessityDiv = document.createElement('div');
-            necessityDiv.className = 'necessity-section';
-            necessityDiv.innerHTML = `<strong>Necessidade:</strong> ${escapeHtml(data.necessity)}`;
-            container.appendChild(necessityDiv);
-        }
-        
-        if (data.requirements && data.requirements.length > 0) {
-            const requirementsDiv = document.createElement('div');
-            requirementsDiv.className = 'requirements-section';
-            
-            const title = document.createElement('h4');
-            title.textContent = data.kind === 'requirements_suggestion' ? 'Requisitos Sugeridos:' : 'Requisitos Atualizados:';
-            requirementsDiv.appendChild(title);
-            
-            const requirementsList = renderRequirementsList(data.requirements);
-            requirementsDiv.appendChild(requirementsList);
-            
-            container.appendChild(requirementsDiv);
-        }
-        
-        if (data.message) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'ai-message';
-            messageDiv.textContent = data.message;
-            container.appendChild(messageDiv);
-        }
-        
-        return container;
+    const container = document.createElement('div');
+    container.className = 'requirements-response';
+
+    if (data && Array.isArray(data.requirements) && data.requirements.length > 0) {
+        const requirementsDiv = document.createElement('div');
+        requirementsDiv.className = 'requirements-section';
+
+        const title = document.createElement('h4');
+        title.textContent = 'Requisitos:';
+        requirementsDiv.appendChild(title);
+
+        const list = renderRequirementsList(data.requirements, Boolean(data.showJustificativa));
+        requirementsDiv.appendChild(list);
+
+        container.appendChild(requirementsDiv);
     }
-    
-    // Renderização padrão para mensagens de texto
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'ai-message';
-    messageDiv.textContent = data.message || data.ai_response || 'Resposta não disponível';
-    return messageDiv;
+
+    if (data && data.message) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'ai-message';
+        messageDiv.textContent = data.message;
+        container.appendChild(messageDiv);
+    }
+
+    if (container.childNodes.length === 0) {
+        const fallback = document.createElement('div');
+        fallback.className = 'ai-message';
+        fallback.textContent = data && data.message ? data.message : 'Resposta não disponível';
+        return fallback;
+    }
+
+    return container;
+}
+
+if (typeof module !== 'undefined') {
+    module.exports = {
+        escapeHtml,
+        renderRequirementsList,
+        renderAssistantMessage,
+    };
 }

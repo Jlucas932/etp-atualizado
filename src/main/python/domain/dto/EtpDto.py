@@ -1,43 +1,28 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Literal
-
-Requirement = Dict[str, str]  # {"id": "R1", "text": "R1 — ..."}
-ReqSource = Literal["rag", "llm"]
-
-
-def _clone_requirements(requirements: List[Requirement]) -> List[Requirement]:
-    return [{"id": r.get("id", ""), "text": r.get("text", "")} for r in requirements]
+from typing import List, Optional
 
 
 @dataclass
 class EtpDto:
     conversation_id: str
-    necessity: Optional[str] = None
-
-    # requisitos atuais NORMALIZADOS (somente "R# — texto")
-    requirements: List[Requirement] = field(default_factory=list)
-
-    # histórico de versões para auditoria/regressão
-    requirements_history: List[List[Requirement]] = field(default_factory=list)
-
-    # origem da versão atual (rag|llm)
-    requirements_source: Optional[ReqSource] = None
-
-    # se True, travar alterações e avançar o fluxo
+    stage: str = "requirements_need"
+    need: str = ""
+    requirements: List[str] = field(default_factory=list)
     requirements_locked: bool = False
+    requirements_version: int = 0
+    history: List[dict] = field(default_factory=list)
+    showJustificativa: bool = False
 
-    # estágio do fluxo (para não resetar)
-    stage: str = "ask_necessity"  # ask_necessity -> revise_requirements -> approved_requirements -> next_sections
+    def snapshot(self) -> dict:
+        return {
+            "version": self.requirements_version,
+            "requirements": list(self.requirements),
+        }
 
-    # seção corrente pós-requisitos
-    current_section: Optional[str] = None  # ex.: "objeto", "estimativa_custos"... conforme seu fluxo existente
-
-    def snapshot(self) -> List[Requirement]:
-        return _clone_requirements(self.requirements)
-
-    def push_history(self) -> None:
-        if self.requirements:
-            self.requirements_history.append(self.snapshot())
+    def append_history(self) -> None:
+        self.history.append(self.snapshot())
 
 
 class _LegacyModel:
@@ -51,7 +36,7 @@ class _LegacyModel:
 
 
 class EtpSession(_LegacyModel):
-    requirements: List[Requirement]
+    requirements: List[str]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
