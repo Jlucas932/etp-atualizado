@@ -30,16 +30,16 @@ function renderRequirementsList(items) {
     items.forEach((item) => {
         const li = document.createElement('li');
         li.className = 'requirement-item';
-        
-        const id = item.id || 'R?';
+
         const text = item.text || item.requirement || 'Texto não disponível';
-        const justification = item.justification || 'Justificativa não disponível';
-        
-        li.innerHTML = `
-            <strong>${escapeHtml(id)}</strong> — ${escapeHtml(text)}
-            <br><em>Justificativa:</em> ${escapeHtml(justification)}
-        `;
-        
+        const showJustificativa = Boolean(item.showJustificativa && item.justification);
+
+        let innerHtml = `<span>${escapeHtml(text)}</span>`;
+        if (showJustificativa) {
+            innerHtml += `<br><em>Justificativa:</em> ${escapeHtml(item.justification)}`;
+        }
+
+        li.innerHTML = innerHtml;
         ul.appendChild(li);
     });
     

@@ -1,21 +1,23 @@
-import os
-from domain.usecase.etp.etp_generator_dynamic import DynamicEtpGenerator
-from domain.usecase.etp.dynamic_prompt_generator import DynamicPromptGenerator
-from rag.retrieval import RAGRetrieval
+from typing import List, Tuple
+
+from domain.dto.EtpDto import Requirement
+from domain.usecase.etp.dynamic_prompt_generator import (
+    generate_requirements_rag_first,
+    regenerate_single,
+)
 
 
-def init_etp_dynamic():
-    """Inicializa componentes dinâmicos do ETP."""
-    openai_api_key = os.getenv('OPENAI_API_KEY')
+def init_etp_dynamic():  # pragma: no cover - compat placeholder
+    """Mantém compatibilidade com chamadas legadas que inicializam componentes dinâmicos."""
+    return None, None, None
 
-    etp_generator = DynamicEtpGenerator(openai_api_key) if openai_api_key else None
-    prompt_generator = DynamicPromptGenerator(openai_api_key) if openai_api_key else None
 
-    if prompt_generator and openai_api_key:
-        rag_system = RAGRetrieval(openai_client=prompt_generator.client)
-        rag_system.build_indices()
-        prompt_generator.set_rag_retrieval(rag_system)
-    else:
-        rag_system = None
+def build_initial_requirements(necessity: str) -> Tuple[List[Requirement], str]:
+    """Retorna requisitos iniciais em formato normalizado e a origem (rag|llm)."""
+    requirements, source = generate_requirements_rag_first(necessity or "")
+    return requirements, source
 
-    return etp_generator, prompt_generator, rag_system
+
+def regenerate_one(necessity: str, reqs: List[Requirement], index1: int) -> List[Requirement]:
+    """Regera apenas um requisito mantendo os demais intactos."""
+    return regenerate_single(necessity or "", reqs, index1)
