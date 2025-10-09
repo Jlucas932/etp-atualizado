@@ -53,58 +53,78 @@ class EtpSession(db.Model):
         """Retorna os requisitos como lista"""
         if self.requirements_json:
             try:
-                return json.loads(self.requirements_json)
+                raw = json.loads(self.requirements_json)
+                return self._sanitize_requirements(raw)
             except json.JSONDecodeError:
                 return []
         return []
-    
+
     def set_requirements(self, requirements_list):
         """Define os requisitos a partir de uma lista"""
-        self.requirements_json = json.dumps(requirements_list, ensure_ascii=False)
-    
-    def add_requirement(self, req_text, justification=""):
+        sanitized = self._sanitize_requirements(requirements_list)
+        self.requirements_json = json.dumps(sanitized, ensure_ascii=False)
+        return sanitized
+
+    def add_requirement(self, req_text):
         """Adiciona um novo requisito à lista"""
         requirements = self.get_requirements()
         req_id = f"R{len(requirements) + 1}"
-        requirements.append({
-            "id": req_id,
-            "text": req_text,
-            "justification": justification
-        })
+        requirements.append({"id": req_id, "text": req_text})
         self.set_requirements(requirements)
         return req_id
-    
-    def update_requirement(self, req_id, new_text=None, new_justification=None):
+
+    def update_requirement(self, req_id, new_text=None):
         """Atualiza um requisito específico"""
         requirements = self.get_requirements()
         for req in requirements:
             if req["id"] == req_id:
                 if new_text:
                     req["text"] = new_text
-                if new_justification:
-                    req["justification"] = new_justification
                 break
         self.set_requirements(requirements)
-    
+
     def remove_requirements(self, req_ids):
         """Remove requisitos por IDs e renumera os restantes"""
         requirements = self.get_requirements()
         # Filtrar requisitos a remover
         filtered_reqs = [req for req in requirements if req["id"] not in req_ids]
-        # Renumerar IDs
-        for i, req in enumerate(filtered_reqs, 1):
-            req["id"] = f"R{i}"
         self.set_requirements(filtered_reqs)
-    
+
     def keep_only_requirements(self, req_ids):
         """Mantém apenas os requisitos especificados e renumera"""
         requirements = self.get_requirements()
         # Filtrar apenas os requisitos desejados
         kept_reqs = [req for req in requirements if req["id"] in req_ids]
-        # Renumerar IDs
-        for i, req in enumerate(kept_reqs, 1):
-            req["id"] = f"R{i}"
         self.set_requirements(kept_reqs)
+
+    def is_requirements_locked(self) -> bool:
+        """Retorna se os requisitos estão travados para edição."""
+        answers = self.get_answers()
+        return bool(answers.get("__requirements_locked", False))
+
+    def set_requirements_locked(self, locked: bool) -> None:
+        """Atualiza o indicador de requisitos travados."""
+        answers = self.get_answers()
+        answers["__requirements_locked"] = bool(locked)
+        self.set_answers(answers)
+
+    def _sanitize_requirements(self, requirements_list):
+        sanitized = []
+        if not requirements_list:
+            return sanitized
+
+        for index, requirement in enumerate(requirements_list, start=1):
+            if isinstance(requirement, dict):
+                text = str(requirement.get("text", "")).strip()
+            else:
+                text = str(requirement).strip()
+
+            sanitized.append({
+                "id": f"R{index}",
+                "text": text
+            })
+
+        return sanitized
     
     def to_dict(self):
         """Converte o modelo para dicionário"""

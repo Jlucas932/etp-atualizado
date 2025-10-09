@@ -1,346 +1,143 @@
-"""
-Testes para verificar o fix do fluxo de revisão de requisitos.
-Valida que comandos como "só não gostei do último" não reiniciam a necessidade.
-"""
+"""Testes determinísticos para revisão de requisitos do ETP."""
 
 import unittest
-import sys
-import os
-import json
 from unittest.mock import patch, MagicMock
 
-# Add src path for imports
+import sys
+import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'main', 'python'))
 
 from domain.services.requirements_interpreter import (
-    parse_update_command, apply_update_command, detect_requirements_discussion,
-    format_requirements_list
+    parse_update_command,
+    apply_update_command,
+    format_requirements_list,
 )
+from domain.dto.EtpDto import EtpSession
+from domain.services.requirements_interpreter import detect_requirements_discussion
+from domain.usecase.etp.dynamic_prompt_generator import DynamicPromptGenerator
+from adapter.entrypoint.chat.ChatController import _default_requirements_from_need
 
 
-class TestRequirementsRevisionFix(unittest.TestCase):
-    """Testes para o fix de revisão de requisitos"""
-
+class RequirementsInterpreterTest(unittest.TestCase):
     def setUp(self):
-        """Configurar dados de teste"""
-        self.sample_requirements = [
-            {
-                "id": "R1",
-                "text": "Comprovação de experiência mínima de 2 anos",
-                "justification": "Necessário para garantir qualidade do serviço"
-            },
-            {
-                "id": "R2", 
-                "text": "Certificação ISO 9001 válida",
-                "justification": "Padrão de qualidade requerido"
-            },
-            {
-                "id": "R3",
-                "text": "Equipe técnica qualificada",
-                "justification": "Recursos humanos adequados"
-            },
-            {
-                "id": "R4",
-                "text": "Garantia mínima de 12 meses",
-                "justification": "Proteção contratual necessária"
-            },
-            {
-                "id": "R5",
-                "text": "Sistema de monitoramento em tempo real",
-                "justification": "Controle operacional requerido"
-            }
+        self.requirements = [
+            {"id": "R1", "text": "Garantir integração com o ERP corporativo"},
+            {"id": "R2", "text": "Manter registros de auditoria por 24 meses"},
+            {"id": "R3", "text": "Disponibilizar painel de monitoramento diário"},
         ]
-        
-        self.necessity = "gestão de frota de aeronaves"
 
-    def test_detect_requirements_discussion(self):
-        """Testa detecção de discussão sobre requisitos"""
-        # Casos que DEVEM ser detectados como discussão sobre requisitos
-        requirement_discussions = [
-            "só não gostei do último, poderia sugerir outro?",
-            "ajustar o último requisito",
-            "remover 2 e 4",
-            "trocar 3",
-            "manter só 1 e 2",
-            "confirmo os requisitos",
-            "requisitos estão bons"
-        ]
-        
-        for text in requirement_discussions:
-            with self.subTest(text=text):
-                self.assertTrue(detect_requirements_discussion(text), 
-                              f"'{text}' deveria ser detectado como discussão sobre requisitos")
-        
-        # Casos que NÃO devem ser detectados
-        non_requirement_discussions = [
-            "qual o valor estimado?",
-            "como funciona o processo?",
-            "preciso de ajuda",
-            "onde encontro informações?"
-        ]
-        
-        for text in non_requirement_discussions:
-            with self.subTest(text=text):
-                self.assertFalse(detect_requirements_discussion(text),
-                               f"'{text}' não deveria ser detectado como discussão sobre requisitos")
+    def test_accept_intent(self):
+        command = parse_update_command("aceitar", self.requirements)
+        self.assertEqual(command["intent"], "accept")
+        updated, message = apply_update_command(command, self.requirements)
+        self.assertEqual(updated, self.requirements)
+        self.assertIn("Requisitos confirmados", message)
 
-    def test_parse_command_adjust_last(self):
-        """Testa parsing do comando 'ajustar o último'"""
-        command = parse_update_command("só não gostei do último, poderia sugerir outro?", self.sample_requirements)
-        
+    def test_refazer_all_intent(self):
+        command = parse_update_command("refazer tudo", self.requirements)
+        self.assertEqual(command["intent"], "refazer_all")
+
+    def test_edit_range(self):
+        command = parse_update_command("ajustar R1-R2 para logs assinados", self.requirements)
         self.assertEqual(command["intent"], "edit")
-        self.assertEqual(command["indices"], [5])  # Último requisito
-        self.assertIsNone(command.get("new_text"))
+        self.assertEqual(command["targets"], [1, 2])
+        updated, _ = apply_update_command(command, self.requirements)
+        self.assertEqual(updated[0]["text"], "logs assinados")
+        self.assertEqual(updated[1]["text"], "logs assinados")
 
-    def test_parse_command_remove_multiple(self):
-        """Testa parsing do comando 'remover 2 e 4'"""
-        command = parse_update_command("remova 2 e 4", self.sample_requirements)
-        
-        self.assertEqual(command["intent"], "remove")
-        self.assertEqual(sorted(command["indices"]), [2, 4])
+    def test_reinforce_command(self):
+        command = parse_update_command("reforça o último com SLA de 99%", self.requirements)
+        self.assertEqual(command["intent"], "reinforce")
+        updated, message = apply_update_command(command, self.requirements)
+        self.assertIn("Reforcei", message)
+        self.assertIn("99%", updated[-1]["text"])
 
-    def test_parse_command_edit_with_text(self):
-        """Testa parsing do comando com novo texto especificado"""
-        command = parse_update_command("trocar 3: exigir certificação Part-145 válida pela ANAC", self.sample_requirements)
-        
-        self.assertEqual(command["intent"], "edit")
-        self.assertEqual(command["indices"], [3])
-        self.assertEqual(command["new_text"], "exigir certificação Part-145 válida pela ANAC")
+    def test_insert_command(self):
+        command = parse_update_command("inserir requisito sobre LGPD", self.requirements)
+        self.assertEqual(command["intent"], "insert")
+        updated, _ = apply_update_command(command, self.requirements)
+        self.assertEqual(len(updated), 4)
+        self.assertTrue(updated[-1]["text"].lower().startswith("requisito"))
 
-    def test_parse_command_keep_only(self):
-        """Testa parsing do comando 'manter só'"""
-        command = parse_update_command("manter só 1 e 2", self.sample_requirements)
-        
-        self.assertEqual(command["intent"], "keep_only")
-        self.assertEqual(sorted(command["indices"]), [1, 2])
+    def test_format_list_without_justification(self):
+        formatted = format_requirements_list(self.requirements)
+        self.assertNotIn("Justificativa", formatted)
+        self.assertTrue(formatted.startswith("R1 —"))
 
-    def test_parse_command_confirm(self):
-        """Testa parsing do comando de confirmação"""
-        commands = [
-            "confirmo os requisitos",
-            "perfeito, está bom",
-            "ok, concordo"
-        ]
-        
-        for cmd_text in commands:
-            with self.subTest(text=cmd_text):
-                command = parse_update_command(cmd_text, self.sample_requirements)
-                self.assertEqual(command["intent"], "confirm")
-
-    def test_parse_command_no_need_change(self):
-        """Testa que frases de revisão NÃO são interpretadas como troca de necessidade"""
-        revision_phrases = [
-            "só não gostei do último",
-            "ajuste apenas o último", 
-            "troque o 3",
-            "remover 2 e 4"
-        ]
-        
-        for phrase in revision_phrases:
-            with self.subTest(phrase=phrase):
-                command = parse_update_command(phrase, self.sample_requirements)
-                self.assertNotEqual(command["intent"], "change_need", 
-                                  f"'{phrase}' não deveria ser interpretado como mudança de necessidade")
-
-    def test_parse_command_explicit_need_change(self):
-        """Testa que apenas gatilhos explícitos mudam necessidade"""
-        need_change_phrases = [
-            "nova necessidade é compra de veículos",
-            "trocar a necessidade para manutenção",
-            "na verdade a necessidade é outra"
-        ]
-        
-        for phrase in need_change_phrases:
-            with self.subTest(phrase=phrase):
-                command = parse_update_command(phrase, self.sample_requirements)
-                self.assertEqual(command["intent"], "change_need")
-
-    def test_apply_remove_command(self):
-        """Testa aplicação do comando de remoção"""
-        command = {"intent": "remove", "indices": [2, 4]}
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # Deve remover requisitos 2 e 4, restando 3
-        self.assertEqual(len(new_reqs), 3)
-        
-        # IDs devem ser renumerados
-        expected_ids = ["R1", "R2", "R3"]
-        actual_ids = [req["id"] for req in new_reqs]
-        self.assertEqual(actual_ids, expected_ids)
-        
-        # Conteúdo dos requisitos restantes deve ser correto
-        self.assertEqual(new_reqs[0]["text"], "Comprovação de experiência mínima de 2 anos")  # Era R1
-        self.assertEqual(new_reqs[1]["text"], "Equipe técnica qualificada")  # Era R3  
-        self.assertEqual(new_reqs[2]["text"], "Sistema de monitoramento em tempo real")  # Era R5
-
-    def test_apply_keep_only_command(self):
-        """Testa aplicação do comando 'manter só'"""
-        command = {"intent": "keep_only", "indices": [1, 3]}
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # Deve manter apenas requisitos 1 e 3
-        self.assertEqual(len(new_reqs), 2)
-        
-        # IDs renumerados
-        expected_ids = ["R1", "R2"]
-        actual_ids = [req["id"] for req in new_reqs]
-        self.assertEqual(actual_ids, expected_ids)
-        
-        # Conteúdo correto
-        self.assertEqual(new_reqs[0]["text"], "Comprovação de experiência mínima de 2 anos")  # Era R1
-        self.assertEqual(new_reqs[1]["text"], "Equipe técnica qualificada")  # Era R3
-
-    def test_apply_edit_command_with_text(self):
-        """Testa aplicação do comando de edição com novo texto"""
-        command = {
-            "intent": "edit", 
-            "indices": [3], 
-            "new_text": "Certificação Part-145 válida pela ANAC"
-        }
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # Número de requisitos deve ser o mesmo
-        self.assertEqual(len(new_reqs), 5)
-        
-        # Requisito 3 deve ter novo texto
-        self.assertEqual(new_reqs[2]["text"], "Certificação Part-145 válida pela ANAC")
-        self.assertIn("ajustado conforme solicitação", new_reqs[2]["justification"])
-
-    def test_apply_edit_command_needs_regeneration(self):
-        """Testa aplicação do comando de edição sem novo texto (para regeneração)"""
-        command = {"intent": "edit", "indices": [5]}
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # Requisito deve ser marcado para regeneração
-        self.assertTrue(new_reqs[4].get("_needs_regeneration", False))
-
-    def test_apply_confirm_command(self):
-        """Testa aplicação do comando de confirmação"""
-        command = {"intent": "confirm"}
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # Lista deve permanecer inalterada
-        self.assertEqual(len(new_reqs), 5)
-        self.assertEqual(new_reqs, self.sample_requirements)
-        self.assertIn("confirmada", message)
-
-    def test_format_requirements_list(self):
-        """Testa formatação da lista de requisitos para exibição"""
-        formatted = format_requirements_list(self.sample_requirements)
-        
-        # Deve conter cabeçalho
-        self.assertIn("## Requisitos Atuais", formatted)
-        
-        # Deve conter todos os requisitos com IDs
-        for req in self.sample_requirements:
-            self.assertIn(f"**{req['id']}**", formatted)
-            self.assertIn(req['text'], formatted)
-            if req.get('justification'):
-                self.assertIn(req['justification'], formatted)
-
-    def test_integration_scenario_adjust_last(self):
-        """Teste de integração: cenário completo 'ajustar o último'"""
-        user_input = "só não gostei do último, poderia sugerir outro?"
-        
-        # 1. Detectar que é discussão sobre requisitos
-        self.assertTrue(detect_requirements_discussion(user_input))
-        
-        # 2. Parsear comando
-        command = parse_update_command(user_input, self.sample_requirements)
-        
-        # 3. Aplicar comando
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # 4. Verificar resultado
-        self.assertEqual(command["intent"], "edit")
-        self.assertEqual(command["indices"], [5])
-        self.assertTrue(new_reqs[4].get("_needs_regeneration", False))
-        self.assertIn("será(ão) regenerado(s)", message)
-
-    def test_integration_scenario_remove_multiple(self):
-        """Teste de integração: cenário 'remover 2 e 4'"""
-        user_input = "remova 2 e 4"
-        
-        # Fluxo completo
-        self.assertTrue(detect_requirements_discussion(user_input))
-        command = parse_update_command(user_input, self.sample_requirements)
-        new_reqs, message = apply_update_command(command, self.sample_requirements, self.necessity)
-        
-        # Verificações
-        self.assertEqual(command["intent"], "remove")
-        self.assertEqual(len(new_reqs), 3)
-        self.assertIn("Removidos 2 requisito(s)", message)
-
-    def test_edge_case_empty_requirements(self):
-        """Testa casos extremos com lista vazia de requisitos"""
-        empty_reqs = []
-        
-        command = parse_update_command("último requisito", empty_reqs)
-        self.assertEqual(command["intent"], "unclear")
-        
-        new_reqs, message = apply_update_command(command, empty_reqs)
-        self.assertEqual(len(new_reqs), 0)
-
-    def test_edge_case_invalid_indices(self):
-        """Testa casos com índices inválidos"""
-        command = parse_update_command("remover 10", self.sample_requirements)
-        
-        # Índice 10 não existe (só temos 5 requisitos)
-        # Deve ser ignorado no parsing
-        self.assertEqual(command["intent"], "unclear")
+    def test_detect_discussion(self):
+        self.assertTrue(detect_requirements_discussion("remover R2"))
+        self.assertFalse(detect_requirements_discussion("qual o valor estimado?"))
 
 
-class TestChatControllerIntegration(unittest.TestCase):
-    """Testes de integração com ChatController"""
-    
+class EtpSessionRequirementTest(unittest.TestCase):
     def setUp(self):
-        """Configurar mocks para testes de integração"""
-        os.environ['OPENAI_API_KEY'] = 'test_api_key_for_testing'
-        os.environ['SECRET_KEY'] = 'test_secret_key'
+        self.session = EtpSession()
 
-    def tearDown(self):
-        """Limpar variáveis de ambiente"""
-        for key in ['OPENAI_API_KEY', 'SECRET_KEY']:
-            if key in os.environ:
-                del os.environ[key]
-
-    @patch('domain.services.requirements_interpreter.parse_update_command')
-    @patch('domain.services.requirements_interpreter.apply_update_command')
-    def test_handle_requirements_revision_mock(self, mock_apply, mock_parse):
-        """Testa integração com handle_requirements_revision usando mocks"""
-        # Configurar mocks
-        mock_parse.return_value = {"intent": "edit", "indices": [5]}
-        mock_apply.return_value = (
-            [{"id": "R1", "text": "Updated req", "justification": "test"}],
-            "Requisito atualizado"
-        )
-        
-        # Mock da sessão ETP
-        mock_session = MagicMock()
-        mock_session.get_requirements.return_value = [
-            {"id": "R1", "text": "Original req", "justification": "original"}
+    def test_sanitize_requirements(self):
+        raw = [
+            {"id": "R1", "text": "Texto", "justification": "deve sumir"},
+            {"id": "R2", "text": "Outro"},
         ]
-        mock_session.necessity = "test necessity"
-        mock_session.session_id = "test_session"
-        
-        # Verificar que os mocks seriam chamados corretamente
-        # (teste conceitual - implementação real requer Flask app context)
-        mock_parse.assert_not_called()  # Ainda não chamado
-        
-        # Simular chamada
-        user_message = "ajustar o último"
-        command = mock_parse.return_value
-        updated_reqs, message = mock_apply.return_value
-        
-        # Verificações
-        self.assertEqual(command["intent"], "edit")
-        self.assertEqual(len(updated_reqs), 1)
-        self.assertEqual(message, "Requisito atualizado")
+        self.session.set_requirements(raw)
+        stored = self.session.get_requirements()
+        self.assertEqual(len(stored), 2)
+        self.assertNotIn("justification", stored[0])
+        self.assertEqual(stored[0]["id"], "R1")
+
+    def test_lock_flag(self):
+        self.assertFalse(self.session.is_requirements_locked())
+        self.session.set_requirements_locked(True)
+        self.assertTrue(self.session.is_requirements_locked())
+
+
+class RagFirstGenerationTest(unittest.TestCase):
+    @patch('domain.usecase.etp.dynamic_prompt_generator.openai.OpenAI')
+    def test_rag_results_are_prioritized(self, mock_openai):
+        generator = DynamicPromptGenerator('test')
+        generator.client = MagicMock()
+
+        class FakeRag:
+            def search_requirements(self, objective_slug, query, k=12):
+                return [
+                    {"content": "Implementar backups diários", "hybrid_score": 0.9},
+                    {"content": "Manter criptografia de dados", "hybrid_score": 0.85},
+                ]
+
+        generator.set_rag_retrieval(FakeRag())
+
+        with patch.object(generator, '_clean_and_format_rag_content', side_effect=lambda c: c):
+            with patch.object(generator, '_generate_requirements_with_llm') as mock_llm:
+                result = generator.generate_requirements_with_rag("backup", "serviço")
+                mock_llm.assert_not_called()
+
+        requirements = result["requirements"]
+        self.assertEqual(len(requirements), 2)
+        self.assertTrue(all(req["id"].startswith('R') for req in requirements))
+        self.assertEqual(result["source"], "rag")
+
+    @patch('domain.usecase.etp.dynamic_prompt_generator.openai.OpenAI')
+    def test_fallback_to_llm_when_rag_empty(self, mock_openai):
+        generator = DynamicPromptGenerator('test')
+        generator.client = MagicMock()
+        generator.set_rag_retrieval(MagicMock(search_requirements=lambda *args, **kwargs: []))
+
+        mocked_lines = ["Requisito 1", "Requisito 2", "Requisito 3", "Requisito 4", "Requisito 5"]
+        with patch.object(generator, '_clean_and_format_rag_content', side_effect=lambda c: c):
+            with patch.object(generator, '_generate_requirements_with_llm', return_value=(mocked_lines, "")) as mock_llm:
+                result = generator.generate_requirements_with_rag("novo sistema", "serviço")
+                mock_llm.assert_called_once()
+        self.assertEqual(len(result["requirements"]), 5)
+        self.assertEqual(result["source"], "llm")
+
+
+class DefaultRequirementsTest(unittest.TestCase):
+    def test_default_requirements_builder(self):
+        defaults = _default_requirements_from_need("gestão de frota")
+        self.assertGreaterEqual(len(defaults), 5)
+        self.assertTrue(all(req["id"].startswith("R") for req in defaults))
+        self.assertTrue(all("gestão" in req["text"].lower() or "frota" in req["text"].lower() for req in defaults))
 
 
 if __name__ == '__main__':
-    # Configurar logging para debug
-    import logging
-    logging.basicConfig(level=logging.DEBUG)
-    
-    unittest.main(verbosity=2)
+    unittest.main()

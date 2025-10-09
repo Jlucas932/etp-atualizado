@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import openai
 import logging
@@ -118,83 +118,152 @@ class DynamicPromptGenerator:
         """Método de compatibilidade - não faz nada pois não usa PDFs"""
         return self.get_knowledge_base_info()
     
-    def generate_requirements_with_rag(self, contracting_need: str, contract_type: str, objective_slug: str = "generic") -> Dict:
-        """
-        Gera requisitos priorizando consulta RAG, com fallback consultivo
-        
-        Args:
-            contracting_need: Descrição da necessidade de contratação
-            contract_type: Tipo de contrato ('produto' ou 'serviço')
-            objective_slug: Slug do objetivo para filtrar resultados RAG
-            
-        Returns:
-            Dict com requirements e source_info
-        """
-        requirements = []
-        consultative_message = ""
-        source_citations = []
-        is_rag_based = False
-        
-        try:
-            # Fase 1: Tentar consulta RAG
-            if self.rag_retrieval:
-                logger.info(f"[RAG] Iniciando consulta RAG para: {contracting_need}")
-                rag_results = self.rag_retrieval.search_requirements(objective_slug, contracting_need, k=5)
-                
-                if rag_results and len(rag_results) > 0:
-                    logger.info(f"[RAG] Encontrados {len(rag_results)} resultados relevantes")
-                    
-                    # Extrair e processar requisitos dos PDFs
-                    rag_requirements = []
-                    citations = []
-                    
-                    for i, result in enumerate(rag_results[:5], 1):
-                        content = result.get('content', '').strip()
-                        section_title = result.get('section_title', 'Documento')
-                        score = result.get('hybrid_score', 0)
-                        
-                        if content and len(content) > 20:  # Evitar fragmentos muito pequenos
-                            # Limpar e formatar conteúdo
-                            clean_content = self._clean_and_format_rag_content(content)
-                            if clean_content:
-                                rag_requirements.append(clean_content)
-                                citations.append(f"Trecho {i}: \"{content[:100]}...\" (Fonte: {section_title}, Relevância: {score:.2f})")
-                    
-                    if rag_requirements:
-                        # Formatar requisitos com R# — prefixo
-                        formatted_requirements = []
-                        for idx, req in enumerate(rag_requirements, 1):
-                            formatted_requirements.append(f"R{idx} — {req}")
-                        
-                        requirements = formatted_requirements
-                        source_citations = citations
-                        is_rag_based = True
-                        consultative_message = "Com base nos documentos da nossa base de conhecimento, identifiquei os seguintes requisitos específicos para esta contratação:"
-                        
-                        logger.info(f"[RAG] Requisitos extraídos com sucesso: {len(requirements)} requisitos")
-                    else:
-                        logger.warning("[RAG] Resultados encontrados mas nenhum requisito válido extraído")
-                else:
-                    logger.info("[RAG] Nenhum resultado relevante encontrado na base de conhecimento")
-                        
-        except Exception as e:
-            logger.error(f"Erro ao consultar RAG: {str(e)}")
-        
-        # Fase 2: Fallback consultivo se RAG não trouxe resultados
-        if not requirements:
-            logger.info("[RAG] Fallback: Gerando sugestões consultivas contextualizadas")
-            requirements, consultative_message = self._generate_contextual_suggestions(contracting_need, contract_type)
-            is_rag_based = False
-            logger.info(f"[RAG] Sugestões consultivas geradas: {len(requirements)} requisitos")
-        
+    def generate_requirements_with_rag(
+        self,
+        contracting_need: str,
+        contract_type: str,
+        objective_slug: str = "generic",
+        *,
+        top_k: int = 12,
+        similarity_threshold: float = 0.78,
+    ) -> Dict[str, Any]:
+        """Garante estratégia *RAG-first* para geração de requisitos."""
+
+        normalized_need = (contracting_need or "").strip()
+        rag_error_notice: Optional[str] = None
+        rag_requirements: List[str] = []
+
+        if self.rag_retrieval and normalized_need:
+            try:
+                rag_results = self.rag_retrieval.search_requirements(
+                    objective_slug or "generic",
+                    normalized_need,
+                    k=top_k,
+                )
+
+                for result in rag_results:
+                    score = result.get("hybrid_score") or result.get("score") or 0.0
+                    if similarity_threshold and score < similarity_threshold:
+                        continue
+
+                    content = result.get("content", "")
+                    cleaned = self._clean_and_format_rag_content(content)
+                    if cleaned:
+                        rag_requirements.append(cleaned)
+
+                rag_requirements = self._deduplicate_requirements(rag_requirements)
+                if rag_requirements:
+                    logger.info(
+                        "[RAG] %s requisito(s) reutilizados da base de conhecimento.",
+                        len(rag_requirements),
+                    )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.exception("Erro ao consultar base RAG", exc_info=exc)
+                rag_error_notice = "Não consegui recuperar um anexo agora. Vou continuar com as informações já coletadas."
+
+        if rag_requirements:
+            requirements = self._build_requirement_dicts(rag_requirements)
+            return {
+                "requirements": requirements,
+                "formatted": [f"{req['id']} — {req['text']}" for req in requirements],
+                "source": "rag",
+                "error_notice": rag_error_notice,
+            }
+
+        generated_lines, raw_text = self._generate_requirements_with_llm(
+            normalized_need,
+            contract_type or "serviço",
+        )
+        requirements = self._build_requirement_dicts(generated_lines)
         return {
-            'requirements': requirements,
-            'consultative_message': consultative_message,
-            'source_citations': source_citations,
-            'is_rag_based': is_rag_based,
-            'total_rag_results': len(rag_results) if 'rag_results' in locals() and rag_results else 0
+            "requirements": requirements,
+            "formatted": [f"{req['id']} — {req['text']}" for req in requirements],
+            "source": "llm",
+            "error_notice": rag_error_notice,
+            "raw_output": raw_text,
         }
     
+    def _generate_requirements_with_llm(self, contracting_need: str, contract_type: str) -> Tuple[List[str], str]:
+        """Gera requisitos via LLM já no formato obrigatório."""
+
+        instruction = (
+            "Você é um consultor público especializado em ETP. \n"
+            "Considere a necessidade: \"{need}\". \n"
+            "Tipo de contratação: {ctype}. \n"
+            "Liste de 5 a 8 requisitos objetivos e testáveis.\n"
+            "Formato obrigatório (uma linha por requisito):\n"
+            "R1 — <requisito>\nR2 — <requisito>\n...\n"
+            "Não inclua justificativas, notas, títulos ou rodapés."
+        ).format(need=contracting_need or "necessidade informada", ctype=contract_type)
+
+        if not self.client:
+            fallback = self._fallback_requirements(contracting_need)
+            return fallback, ""
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Você apoia servidores públicos na redação de requisitos objetivos para ETP.",
+                },
+                {"role": "user", "content": instruction},
+            ],
+            temperature=0.2,
+            max_tokens=600,
+        )
+
+        raw_text = response.choices[0].message.content.strip()
+        parsed = self._parse_requirement_lines(raw_text)
+
+        if not parsed:
+            parsed = self._fallback_requirements(contracting_need)
+
+        return parsed, raw_text
+
+    def _parse_requirement_lines(self, raw_text: str) -> List[str]:
+        lines = []
+        for raw_line in raw_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            match = re.match(r"^R(\d+)\s*[—-]\s*(.+)$", line)
+            if match:
+                lines.append(match.group(2).strip())
+        return lines[:8]
+
+    def _build_requirement_dicts(self, requirements: List[str]) -> List[Dict[str, str]]:
+        sanitized = []
+        for idx, text in enumerate(requirements, start=1):
+            sanitized.append({"id": f"R{idx}", "text": text.strip()})
+        return sanitized
+
+    def _deduplicate_requirements(self, requirements: List[str]) -> List[str]:
+        seen = set()
+        unique = []
+        for item in requirements:
+            normalized = item.strip()
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(normalized)
+            if len(unique) >= 8:
+                break
+        return unique
+
+    def _fallback_requirements(self, contracting_need: str) -> List[str]:
+        base = contracting_need or "a solução proposta"
+        return [
+            f"Definir critérios funcionais mínimos para {base}.",
+            f"Garantir métricas de desempenho mensuráveis para {base}.",
+            f"Estabelecer controles de segurança e rastreabilidade para {base}.",
+            f"Prever plano de capacitação dos usuários envolvidos em {base}.",
+            f"Monitorar indicadores de qualidade e disponibilidade da solução de {base}.",
+        ]
+
     def _clean_and_format_rag_content(self, content: str) -> str:
         """Limpa e formata conteúdo extraído do RAG para formato de requisito"""
         # Remover quebras de linha excessivas e espaços
