@@ -1,6 +1,8 @@
 import os
 import json
+import logging
 from datetime import datetime
+from typing import List, Dict, Tuple, Any
 from flask import Blueprint, request, jsonify, session
 from flask_cors import cross_origin
 import openai
@@ -10,16 +12,35 @@ from domain.dto.EtpDto import ChatSession, EtpSession
 from domain.dto.UserDto import User
 from domain.dto.KbDto import KbChunk
 from domain.services.requirements_interpreter import (
-    parse_update_command, apply_update_command, detect_requirements_discussion, 
+    parse_update_command, apply_update_command, detect_requirements_discussion,
     format_requirements_list
 )
 from config.etp_consultant_prompt import get_etp_consultant_prompt
+from domain.services.etp_dynamic import init_etp_dynamic
 
 chat_bp = Blueprint('chat', __name__)
 
 # Configurar cliente OpenAI
 openai_api_key = os.getenv('OPENAI_API_KEY')
 openai_client = openai.OpenAI(api_key=openai_api_key) if openai_api_key else None
+
+_etp_generator = None
+_prompt_generator = None
+_rag_system = None
+_etp_components_ready = False
+logger = logging.getLogger(__name__)
+
+
+def _ensure_etp_components():
+    global _etp_generator, _prompt_generator, _rag_system, _etp_components_ready
+    if _etp_components_ready:
+        return
+    try:
+        _etp_generator, _prompt_generator, _rag_system = init_etp_dynamic()
+        _etp_components_ready = True
+    except Exception as exc:  # pragma: no cover - inicialização defensiva
+        logger.warning("Não foi possível inicializar componentes dinâmicos do ETP: %s", exc)
+        _etp_components_ready = False
 
 def search_relevant_chunks(query_text, limit=3):
     """Busca chunks relevantes na knowledge base baseado na consulta do usuário"""
@@ -477,19 +498,26 @@ def handle_requirements_revision(etp_session, user_message, current_user):
         
         # Interpretar o comando do usuário
         command = parse_update_command(user_message, current_requirements)
-        
-        # Aplicar o comando determinísticamente
-        updated_requirements, response_message = apply_update_command(
-            command, current_requirements, necessity
-        )
-        
-        # Atualizar a sessão ETP
-        etp_session.set_requirements(updated_requirements)
-        
-        # Se requisitos foram confirmados, avançar estágio
-        if command.get("intent") == "confirm":
-            etp_session.conversation_stage = "legal_norms"
+        intent = command.get("intent")
+
+        if intent == "refazer_all":
+            updated_requirements, regeneration_message = _regenerate_requirements_list(necessity)
+            response_message = regeneration_message
         else:
+            updated_requirements, response_message = apply_update_command(
+                command, current_requirements, necessity
+            )
+
+        etp_session.set_requirements(updated_requirements)
+
+        if intent == "accept":
+            etp_session.set_requirements_locked(True)
+            etp_session.conversation_stage = "legal_norms"
+        elif intent == "change_need":
+            etp_session.set_requirements_locked(False)
+            etp_session.conversation_stage = "collect_need"
+        else:
+            etp_session.set_requirements_locked(False)
             etp_session.conversation_stage = "review_requirements"
             
         etp_session.updated_at = datetime.utcnow()
@@ -526,36 +554,34 @@ def handle_requirements_revision(etp_session, user_message, current_user):
         db.session.commit()
         
         # Preparar resposta estruturada
-        if command.get("intent") == "confirm":
-            # Requisitos confirmados - avançar para próxima fase
+        if intent == "accept":
             response_data = {
                 'success': True,
                 'kind': 'requirements_confirmed',
                 'necessity': necessity,
                 'requirements': updated_requirements,
-                'message': response_message + "\n\nAgora vamos definir as normas legais federais para sua contratação.",
+                'message': response_message + "\n\nVamos seguir para a próxima etapa do ETP.",
                 'timestamp': datetime.now().isoformat()
             }
-        elif command.get("intent") == "unclear":
-            # Comando não compreendido - pedir esclarecimento
+        elif intent in {"unclear", "change_need"}:
             requirements_display = format_requirements_list(updated_requirements)
             response_data = {
                 'success': True,
                 'kind': 'requirements_review',
                 'necessity': necessity,
                 'requirements': updated_requirements,
-                'message': f"{response_message}\n\n{requirements_display}\n\nDiga 'confirmar' para prosseguir ou indique ajustes específicos.",
+                'message': f"{response_message}\n\n{requirements_display}",
                 'timestamp': datetime.now().isoformat()
             }
         else:
-            # Requisitos foram atualizados
             requirements_display = format_requirements_list(updated_requirements)
+            response_kind = 'requirements_regenerated' if intent == 'refazer_all' else 'requirements_update'
             response_data = {
                 'success': True,
-                'kind': 'requirements_update',
+                'kind': response_kind,
                 'necessity': necessity,
                 'requirements': updated_requirements,
-                'message': f"{response_message}\n\n{requirements_display}\n\nDiga 'confirmar' para prosseguir ou faça mais ajustes.",
+                'message': f"{response_message}\n\n{requirements_display}\n\nDiga 'aceitar' para avançar ou faça novos ajustes.",
                 'timestamp': datetime.now().isoformat()
             }
         
@@ -566,6 +592,47 @@ def handle_requirements_revision(etp_session, user_message, current_user):
             'success': False,
             'error': f'Erro ao processar revisão de requisitos: {str(e)}'
         }), 500
+
+
+def _regenerate_requirements_list(necessity: str) -> Tuple[List[Dict[str, str]], str]:
+    """Gera nova lista de requisitos respeitando estratégia RAG-first."""
+    _ensure_etp_components()
+    generation_result: Dict[str, Any] = {}
+
+    try:
+        if _etp_generator:
+            generation_result = _etp_generator.suggest_requirements(necessity or "")
+        elif _prompt_generator:
+            generation_result = _prompt_generator.generate_requirements_with_rag(necessity or "", "serviço")
+    except Exception as exc:  # pragma: no cover - fallback defensivo
+        logger.warning("Falha ao regenerar requisitos automaticamente: %s", exc)
+        generation_result = {}
+
+    requirements = generation_result.get("requirements") or _default_requirements_from_need(necessity)
+    source = generation_result.get("source")
+    base_message = (
+        "Recuperei requisitos da base de conhecimento e atualizei a lista."
+        if source == "rag"
+        else "Gerei uma nova lista de requisitos com base nas informações fornecidas."
+    )
+
+    if generation_result.get("error_notice"):
+        base_message = generation_result["error_notice"] + "\n\n" + base_message
+
+    return requirements, base_message
+
+
+def _default_requirements_from_need(necessity: str) -> List[Dict[str, str]]:
+    """Fallback simples quando não há geração automática disponível."""
+    base = (necessity or "a solução proposta").strip()
+    templates = [
+        f"Definir claramente o escopo funcional da contratação relacionada a {base}.",
+        f"Estabelecer critérios mensuráveis de desempenho e qualidade para {base}.",
+        f"Garantir mecanismos de segurança, auditoria e rastreabilidade para {base}.",
+        f"Documentar responsabilidades operacionais e prazos de atendimento para {base}.",
+        f"Prover indicadores de monitoramento contínuo e relatórios periódicos sobre {base}.",
+    ]
+    return [{"id": f"R{i+1}", "text": text} for i, text in enumerate(templates)]
 
 
 @chat_bp.route('/analyze-need', methods=['POST'])

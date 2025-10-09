@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import openai
 from datetime import datetime
 from .dynamic_prompt_generator import DynamicPromptGenerator
@@ -194,9 +194,28 @@ class DynamicEtpGenerator:
                 full_etp = header + "\n\n" + full_etp
             
             return full_etp
-            
+
         except Exception as e:
             raise Exception(f"Erro na geração do ETP: {str(e)}")
+
+    def suggest_requirements(
+        self,
+        contracting_need: str,
+        contract_type: str = "serviço",
+        objective_slug: str = "generic",
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Gera requisitos garantindo consulta prévia à base RAG."""
+
+        if not self.prompt_generator:
+            raise RuntimeError("Prompt generator não inicializado para geração de requisitos")
+
+        return self.prompt_generator.generate_requirements_with_rag(
+            contracting_need,
+            contract_type,
+            objective_slug,
+            **kwargs,
+        )
     
     def _generate_section_dynamic(self, section_info: Dict, session_data: Dict, 
                                 context_data: Dict = None, is_preview: bool = False) -> str:
