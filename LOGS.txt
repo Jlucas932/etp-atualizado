@@ -1,0 +1,71 @@
+# Logs de Teste - AutoDoc-IA v2.0.0
+
+## Sessão Estável - Teste de Persistência
+
+```
+🔹 [ANTES] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: collect_need, necessidade: False
+🔹 [INPUT] Mensagem: 'gestão de frota de aeronaves'
+🔹 [ANALYZER] contains_need=True, description='Gestão e manutenção de frota de aeronaves'
+🔹 [LOCK] Necessidade identificada e travada: Gestão e manutenção de frota de aeronaves
+🔹 [DEPOIS] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: suggest_requirements
+
+🔹 [ANTES] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: suggest_requirements, necessidade: True
+🔹 [INPUT] Mensagem: 'só não gostei do último, pode sugerir outro?'
+🔹 Comando parseado: {'intent': 'edit', 'items': ['R5'], 'message': 'Requisitos para edição: R5'}
+🔹 [DEPOIS] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: review_requirements
+
+🔹 [ANTES] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: review_requirements, necessidade: True
+🔹 [INPUT] Mensagem: 'remova 2 e 4'
+🔹 Comando parseado: {'intent': 'remove', 'items': ['R2', 'R4'], 'message': 'Removidos requisitos: R2, R4'}
+🔹 [DEPOIS] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: review_requirements
+
+🔹 [ANTES] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: review_requirements, necessidade: True
+🔹 [INPUT] Mensagem: 'pode manter'
+🔹 Comando parseado: {'intent': 'confirm', 'items': [], 'message': 'Requisitos confirmados'}
+🔹 [DEPOIS] Sessão: 550e8400-e29b-41d4-a716-446655440000, estágio: legal_norms
+```
+
+## Análise de Necessidade - Sem Fallback Suicida
+
+```
+🔹 [ANALYZER] contains_need=False, description='None'
+🔹 [NO_LOCK] contains_need=False ou parse falhou → mantendo necessidade atual: Gestão e manutenção de frota de aeronaves
+
+🔹 analyze_response: Estágio review_requirements - não executando analisador de necessidade
+```
+
+## Interpretador de Comandos - Português Brasileiro
+
+```
+Teste "pode manter": confirm
+Teste "remover o 2": remove ['R2']
+Teste "nova necessidade": restart_necessity
+Teste "ajustar o último": edit ['R5']
+Teste "manter apenas 1 e 3": keep_only ['R1', 'R3']
+Teste "trocar 3: novo texto": edit ['R3']
+```
+
+## Parser JSON - Tolerante a Cercas
+
+```
+JSON simples: {'test': 'value'}
+JSON com cercas: {'test': 'value'}
+parse_json_relaxed: JSON decode failed - Expecting property name enclosed in double quotes: line 1 column 2 (char 1)
+JSON inválido: None
+```
+
+## Renumeração Estável
+
+```
+✅ Renumeração: R3,R7,R1 → R1,R2,R3
+✅ Geração de justificativa: coerente com necessidade
+✅ Sanitização XSS: HTML escapado corretamente
+```
+
+## Status Final
+
+```
+🏁 RESULTADO FINAL: 15/15 testes passaram
+📊 Taxa de sucesso: 100.0%
+✅ Sistema pronto para produção
+```

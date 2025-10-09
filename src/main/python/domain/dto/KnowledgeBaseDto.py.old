@@ -1,0 +1,84 @@
+from domain.interfaces.dataprovider.DatabaseConfig import db
+from datetime import datetime
+
+class KbDocument(db.Model):
+    """Modelo de dados do documento da base de conhecimento"""
+    
+    __tablename__ = 'kb_document'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    title = db.Column(db.String(500), nullable=True)
+    objective_slug = db.Column(db.String(100), nullable=False, index=True)
+    document_type = db.Column(db.String(50), nullable=False)  # 'etp', 'legal', etc.
+    source_path = db.Column(db.String(500), nullable=True)
+    metadata = db.Column(db.Text, nullable=True)  # JSON string for additional metadata
+    
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    updated_at = db.Column(db.DateTime, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
+    
+    # Relacionamento com chunks
+    chunks = db.relationship('KbChunk', backref='document', lazy=True, cascade='all, delete-orphan')
+
+    def __repr__(self):
+        return f'<KbDocument {self.filename}>'
+
+    def to_dict(self):
+        """Converte o modelo para dicionário"""
+        return {
+            'id': self.id,
+            'filename': self.filename,
+            'title': self.title,
+            'objective_slug': self.objective_slug,
+            'document_type': self.document_type,
+            'source_path': self.source_path,
+            'metadata': self.metadata,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'chunks_count': len(self.chunks)
+        }
+
+
+class KbChunk(db.Model):
+    """Modelo de dados do chunk (fragmento) da base de conhecimento"""
+    
+    __tablename__ = 'kb_chunk'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('kb_document.id'), nullable=False, index=True)
+    chunk_index = db.Column(db.Integer, nullable=False)  # Índice do chunk no documento
+    section_type = db.Column(db.String(50), nullable=False, index=True)  # 'requisito', 'norma_legal', etc.
+    content = db.Column(db.Text, nullable=False)  # Conteúdo do chunk
+    embedding = db.Column(db.Text, nullable=True)  # JSON string do vetor de embedding
+    
+    # Metadados adicionais do chunk
+    section_title = db.Column(db.String(500), nullable=True)
+    page_number = db.Column(db.Integer, nullable=True)
+    char_start = db.Column(db.Integer, nullable=True)
+    char_end = db.Column(db.Integer, nullable=True)
+    
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    
+    def __repr__(self):
+        return f'<KbChunk {self.id} - {self.section_type}>'
+
+    def to_dict(self):
+        """Converte o modelo para dicionário"""
+        return {
+            'id': self.id,
+            'document_id': self.document_id,
+            'chunk_index': self.chunk_index,
+            'section_type': self.section_type,
+            'content': self.content,
+            'section_title': self.section_title,
+            'page_number': self.page_number,
+            'char_start': self.char_start,
+            'char_end': self.char_end,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+    def content_preview(self, max_chars=200):
+        """Retorna uma prévia do conteúdo do chunk"""
+        if len(self.content) <= max_chars:
+            return self.content
+        return self.content[:max_chars] + "..."

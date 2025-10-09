@@ -1,0 +1,60 @@
+{
+  "etp_template": {
+    "1": {
+      "titulo": "Introdução",
+      "conteudo": ""
+    },
+    "2": {
+      "titulo": "Objeto do Estudo e Especificações Gerais",
+      "conteudo": ""
+    },
+    "3": {
+      "titulo": "Descrição dos Requisitos da Contratação",
+      "conteudo": ""
+    },
+    "4": {
+      "titulo": "Estimativa das Quantidades e Valores",
+      "conteudo": ""
+    },
+    "5": {
+      "titulo": "Levantamento de Mercado e Justificativa da Escolha da Solução",
+      "conteudo": ""
+    },
+    "6": {
+      "titulo": "Estimativa do Valor da Contratação",
+      "conteudo": ""
+    },
+    "7": {
+      "titulo": "Descrição da Solução como um Todo",
+      "conteudo": ""
+    },
+    "8": {
+      "titulo": "Justificativa para o Parcelamento ou não da Contratação",
+      "conteudo": ""
+    },
+    "9": {
+      "titulo": "Demonstrativo dos Resultados Pretendidos",
+      "conteudo": ""
+    },
+    "10": {
+      "titulo": "Providências Adotadas Anteriormente pela Administração",
+      "conteudo": ""
+    },
+    "11": {
+      "titulo": "Contratações Correlatas ou Interdependentes",
+      "conteudo": ""
+    },
+    "12": {
+      "titulo": "Avaliação dos Impactos Ambientais",
+      "conteudo": ""
+    },
+    "13": {
+      "titulo": "Análise de Riscos",
+      "conteudo": ""
+    },
+    "14": {
+      "titulo": "Conclusão e Posicionamento Final",
+      "conteudo": ""
+    }
+  }
+}

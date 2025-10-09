@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoDoc Licitação — Login</title>
+    <link rel="icon" href="favicon_etp.ico" type="image/x-icon">
+    <!-- VISUAL CHANGE: Updated to use Google Fonts Material Symbols and removed Font Awesome -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+    <style>
+        /* VISUAL CHANGE: Added custom Yummo font face definition */
+        @font-face {
+            font-family: 'Yummo';
+            src: url('fonts/Yummo-Regular.otf') format('opentype');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        /* VISUAL CHANGE: Updated CSS custom properties with new purple brand colors */
+        :root{
+            --brand: #6C4CF8;
+            --brand-hover: #5b3fe4;
+            --muted: #6B7280;
+            --radius: 10px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* VISUAL CHANGE: Updated body styling with new font family and centering approach */
+        body{
+            margin:0;
+            font-family: Inter, sans-serif;
+            background:#fff;
+            color:#111827;
+        }
+
+        /* VISUAL CHANGE: New page layout using grid for centering */
+        .page{
+            display:grid;
+            place-items:center;
+            min-height:100vh;
+            padding:20px;
+            text-align:center;
+            box-sizing: border-box;
+        }
+
+        /* VISUAL CHANGE: Removed old login-container styling and replaced with new layout */
+
+        /* VISUAL CHANGE: New brand header styling with icon and title */
+        .brand{
+            display:inline-flex;
+            align-items:center;
+            gap:10px;
+            margin-bottom:10px;
+            color:var(--brand);
+        }
+
+        .brand-icon {
+            font-size: 32px;
+        }
+
+        .brand-title {
+            font-family: 'Yummo', Inter, sans-serif;
+            font-size: 28px;
+            font-weight: normal;
+            margin: 0;
+            color: var(--brand);
+        }
+
+        /* VISUAL CHANGE: Updated headline styling */
+        .headline{
+            font-size:22px;
+            font-weight:700;
+            margin:10px 0 8px;
+        }
+
+        /* VISUAL CHANGE: New subhead styling */
+        .subhead{
+            max-width:460px;
+            margin:0 auto 24px;
+            font-size:15px;
+            color:var(--muted);
+            line-height:1.4;
+        }
+
+        /* VISUAL CHANGE: Updated form container styling */
+        form{
+            max-width:420px;
+            margin:0 auto;
+            text-align:left;
+        }
+
+        /* VISUAL CHANGE: Updated field styling with grid layout */
+        .field{
+            display:grid;
+            gap:6px;
+            margin-bottom:16px;
+        }
+
+        /* VISUAL CHANGE: Updated label styling with brand color */
+        label{
+            font-size:13px;
+            font-weight:600;
+            color:var(--brand);
+        }
+
+        /* VISUAL CHANGE: Updated input styling with new dimensions and brand colors */
+        input{
+            height:48px;
+            width:100%;
+            padding:0 14px;
+            border:1px solid #E5E7EB;
+            border-radius:var(--radius);
+            font-size:15px;
+            box-sizing: border-box;
+        }
+
+        input:focus{
+            outline:none;
+            border-color:var(--brand);
+            box-shadow:0 0 0 2px rgba(108,76,248,0.2);
+        }
+
+        /* VISUAL CHANGE: New links section styling */
+        .links{ 
+            margin-bottom:18px; 
+        }
+
+        a.muted{
+            font-size:13px;
+            color:var(--muted);
+            text-decoration:none;
+        }
+
+        a.muted:hover{
+            text-decoration:underline;
+        }
+
+        /* VISUAL CHANGE: Updated primary button styling with pill shape */
+        .primary{
+            width:100%;
+            height:52px;
+            border:0;
+            border-radius:999px;
+            background:var(--brand);
+            color:#fff;
+            font-size:16px;
+            font-weight:600;
+            cursor:pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .primary:hover{
+            background:var(--brand-hover);
+        }
+
+        .primary:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        /* VISUAL CHANGE: Updated error message styling to match new design */
+        .error-message {
+            color: #ef4444;
+            font-size: 13px;
+            margin-top: 4px;
+            height: 13px;
+            display: block;
+        }
+
+        .error-message:empty {
+            display: none;
+        }
+
+        /* VISUAL CHANGE: Updated global error message styling */
+        .global-error-message {
+            background: #fee;
+            color: #e74c3c;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        /* VISUAL CHANGE: New toast notification styling */
+        #toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 8px;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s, visibility 0.3s, bottom 0.3s;
+            z-index: 1000;
+        }
+
+        #toast.show {
+            opacity: 1;
+            visibility: visible;
+            bottom: 40px;
+        }
+
+        .loading-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid transparent;
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* VISUAL CHANGE: Updated demo-info styling with new brand colors */
+        .demo-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid var(--brand);
+        }
+
+        .demo-info h4 {
+            color: var(--brand);
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .demo-info ul {
+            color: #666;
+            font-size: 0.8rem;
+            margin-left: 15px;
+        }
+
+        .demo-info li {
+            margin-bottom: 4px;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- VISUAL CHANGE: Updated body structure to use new page layout and login section -->
+    <main class="page">
+        <section class="login">
+            <!-- VISUAL CHANGE: New brand header with Material Icons and updated title -->
+            <header class="brand">
+                <span class="material-symbols-outlined brand-icon">description</span>
+                <h1 class="brand-title">AutoDoc Licitação</h1>
+            </header>
+
+            <!-- VISUAL CHANGE: New headline and subhead text -->
+            <h2 class="headline">Documentos prontos em poucos cliques</h2>
+            <p class="subhead">
+                Transforme a burocracia em eficiência: documentos de licitação prontos com tecnologia de IA
+            </p>
+
+            <!-- VISUAL CHANGE: Updated global error message with new styling -->
+            <div class="global-error-message" id="errorMessage"></div>
+
+            <!-- VISUAL CHANGE: Updated form structure with new field layout but preserved all IDs and functionality -->
+            <form id="loginForm" novalidate>
+                <div class="field">
+                    <label for="username">Usuário</label>
+                    <input 
+                        id="username" 
+                        name="username" 
+                        type="text" 
+                        value=""
+                        required 
+                        autocomplete="username"
+                        placeholder="Digite seu nome de usuário"
+                    />
+                    <p id="username-error" class="error-message"></p>
+                </div>
+
+                <div class="field">
+                    <label for="password">Senha</label>
+                    <input 
+                        id="password" 
+                        name="password" 
+                        type="password" 
+                        value=""
+                        required 
+                        autocomplete="current-password"
+                        placeholder="Digite sua senha"
+                    />
+                    <p id="password-error" class="error-message"></p>
+                </div>
+
+                <!-- VISUAL CHANGE: Updated button with new primary class but preserved all IDs -->
+                <button type="submit" class="primary" id="loginButton">
+                    <span>Entrar</span>
+                    <div class="loading-spinner" id="loadingSpinner"></div>
+                </button>
+            </form>
+
+            <!-- VISUAL CHANGE: Updated demo info styling to match new brand colors -->
+            <div class="demo-info">
+                <h4>Versão Demo - Limites:</h4>
+                <ul>
+                    <li>Máximo 5 documentos ETP por usuário</li>
+                    <li>Máximo 5 perguntas no chat por usuário</li>
+                </ul>
+            </div>
+        </section>
+        <!-- VISUAL CHANGE: Added toast notification container -->
+        <div id="toast"></div>
+    </main>
+
+    <script>
+        // FUNCTIONALITY PRESERVED: All existing LoginManager functionality maintained with updated error handling
+        class LoginManager {
+            constructor() {
+                this.init();
+            }
+
+            init() {
+                this.bindEvents();
+                this.checkExistingSession();
+                // Clear fields for demonstration (as in new design model)
+                document.getElementById('username').value = '';
+                document.getElementById('password').value = '';
+            }
+
+            bindEvents() {
+                document.getElementById('loginForm').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    this.handleLogin();
+                });
+            }
+
+            async checkExistingSession() {
+                try {
+                    const response = await fetch('/api/auth/current');
+                    const data = await response.json();
+                    
+                    if (data.success && data.authenticated) {
+                        // Usuário já está logado, redirecionar para a aplicação
+                        window.location.href = '/';
+                    }
+                } catch (error) {
+                    console.log('No existing session');
+                }
+            }
+
+            async handleLogin() {
+                const username = document.getElementById('username').value.trim();
+                const password = document.getElementById('password').value;
+                const usernameError = document.getElementById('username-error');
+                const passwordError = document.getElementById('password-error');
+                
+                // Clear previous field errors
+                usernameError.textContent = '';
+                passwordError.textContent = '';
+                this.clearGlobalError();
+
+                let isValid = true;
+
+                // Basic validation with individual field error messages
+                if (!username || username.length === 0) {
+                    usernameError.textContent = 'Informe seu nome de usuário';
+                    isValid = false;
+                }
+                
+                if (!password || password.length === 0) {
+                    passwordError.textContent = 'Informe sua senha';
+                    isValid = false;
+                }
+
+                if (!isValid) return;
+
+                this.setLoading(true);
+                
+                try {
+                    const response = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            username: username,
+                            password: password
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                        // Show success toast and redirect
+                        this.showToast('Login efetuado com sucesso');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 900);
+                    } else {
+                        this.showError(data.error || 'Erro no login');
+                    }
+                } catch (error) {
+                    this.showError('Erro de conexão. Tente novamente.');
+                } finally {
+                    this.setLoading(false);
+                }
+            }
+
+            setLoading(isLoading) {
+                const button = document.getElementById('loginButton');
+                const spinner = document.getElementById('loadingSpinner');
+                const buttonText = button.querySelector('span');
+                
+                if (isLoading) {
+                    button.disabled = true;
+                    spinner.style.display = 'block';
+                    buttonText.textContent = 'Entrando...';
+                } else {
+                    button.disabled = false;
+                    spinner.style.display = 'none';
+                    buttonText.textContent = 'Entrar';
+                }
+            }
+
+            showError(message) {
+                const errorDiv = document.getElementById('errorMessage');
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                
+                // Esconder erro após 5 segundos
+                setTimeout(() => {
+                    errorDiv.style.display = 'none';
+                }, 5000);
+            }
+
+            clearGlobalError() {
+                const errorDiv = document.getElementById('errorMessage');
+                errorDiv.style.display = 'none';
+            }
+
+            // VISUAL ENHANCEMENT: Added toast notifications as in new design model
+            showToast(message) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.classList.add('show');
+                setTimeout(() => toast.classList.remove('show'), 2200);
+            }
+        }
+
+        // Inicializar quando a página carregar
+        document.addEventListener('DOMContentLoaded', () => {
+            new LoginManager();
+        });
+    </script>
+</body>
+</html>

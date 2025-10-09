@@ -1,0 +1,44 @@
+🚀 Iniciando AZ ETP Fácil...
+
+🐘 Docker encontrado. Tentando iniciar PostgreSQL...
+⚠️  Não foi possível iniciar PostgreSQL. Sistema usará SQLite.
+🔧 Instalando dependências...
+Requirement already satisfied: blinker==1.9.0 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 1)) (1.9.0)
+Requirement already satisfied: click==8.2.1 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 2)) (8.2.1)
+Requirement already satisfied: Flask==3.1.1 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 3)) (3.1.1)
+Requirement already satisfied: flask-cors==6.0.0 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 4)) (6.0.0)
+Requirement already satisfied: Flask-SQLAlchemy==3.1.1 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 5)) (3.1.1)
+Requirement already satisfied: greenlet==3.2.3 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 6)) (3.2.3)
+Requirement already satisfied: itsdangerous==2.2.0 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 7)) (2.2.0)
+Requirement already satisfied: Jinja2==3.1.6 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 8)) (3.1.6)
+Requirement already satisfied: MarkupSafe==3.0.2 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 9)) (3.0.2)
+Requirement already satisfied: SQLAlchemy==2.0.41 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 10)) (2.0.41)
+Requirement already satisfied: typing_extensions==4.14.0 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 11)) (4.14.0)
+Requirement already satisfied: Werkzeug==3.1.3 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 12)) (3.1.3)
+Requirement already satisfied: openai>=1.12.0 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 14)) (1.107.3)
+Requirement already satisfied: python-docx==0.8.11 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 15)) (0.8.11)
+Requirement already satisfied: requests==2.31.0 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 16)) (2.31.0)
+Requirement already satisfied: python-dotenv==1.0.00 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 17)) (1.0.0)
+Requirement already satisfied: psycopg2-binary==2.9.9 in ./venv/lib/python3.12/site-packages (from -r requirements.txt (line 19)) (2.9.9)
+Requirement already satisfied: lxml>=2.3.2 in ./venv/lib/python3.12/site-packages (from python-docx==0.8.11->-r requirements.txt (line 15)) (6.0.1)
+Requirement already satisfied: charset-normalizer<4,>=2 in ./venv/lib/python3.12/site-packages (from requests==2.31.0->-r requirements.txt (line 16)) (3.4.3)
+Requirement already satisfied: idna<4,>=2.5 in ./venv/lib/python3.12/site-packages (from requests==2.31.0->-r requirements.txt (line 16)) (3.10)
+Requirement already satisfied: urllib3<3,>=1.21.1 in ./venv/lib/python3.12/site-packages (from requests==2.31.0->-r requirements.txt (line 16)) (2.5.0)
+Requirement already satisfied: certifi>=2017.4.17 in ./venv/lib/python3.12/site-packages (from requests==2.31.0->-r requirements.txt (line 16)) (2025.8.3)
+Requirement already satisfied: anyio<5,>=3.5.0 in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (4.10.0)
+Requirement already satisfied: distro<2,>=1.7.0 in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (1.9.0)
+Requirement already satisfied: httpx<1,>=0.23.0 in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (0.28.1)
+Requirement already satisfied: jiter<1,>=0.4.0 in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (0.11.0)
+Requirement already satisfied: pydantic<3,>=1.9.0 in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (2.11.9)
+Requirement already satisfied: sniffio in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (1.3.1)
+Requirement already satisfied: tqdm>4 in ./venv/lib/python3.12/site-packages (from openai>=1.12.0->-r requirements.txt (line 14)) (4.67.1)
+Requirement already satisfied: httpcore==1.* in ./venv/lib/python3.12/site-packages (from httpx<1,>=0.23.0->openai>=1.12.0->-r requirements.txt (line 14)) (1.0.9)
+Requirement already satisfied: h11>=0.16 in ./venv/lib/python3.12/site-packages (from httpcore==1.*->httpx<1,>=0.23.0->openai>=1.12.0->-r requirements.txt (line 14)) (0.16.0)
+Requirement already satisfied: annotated-types>=0.6.0 in ./venv/lib/python3.12/site-packages (from pydantic<3,>=1.9.0->openai>=1.12.0->-r requirements.txt (line 14)) (0.7.0)
+Requirement already satisfied: pydantic-core==2.33.2 in ./venv/lib/python3.12/site-packages (from pydantic<3,>=1.9.0->openai>=1.12.0->-r requirements.txt (line 14)) (2.33.2)
+Requirement already satisfied: typing-inspection>=0.4.0 in ./venv/lib/python3.12/site-packages (from pydantic<3,>=1.9.0->openai>=1.12.0->-r requirements.txt (line 14)) (0.4.1)
+🎯 Iniciando aplicação...
+📍 Acesse: http://localhost:5002
+🔄 Para parar: Ctrl+C
+
+python: can't open file '/home/joao.pinheiro/Documentos/projeto-etp/autodoc-ia/src/main.py': [Errno 2] No such file or directory

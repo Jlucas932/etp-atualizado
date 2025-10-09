@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Test</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <main class="main-content">
+            <div class="chat-view" style="display: flex;">
+                <div class="chat-messages-container" id="chatMessages">
+                    <!-- Test messages will be added here -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Test the addMessage function with Markdown content
+        const chatMessagesContainer = document.getElementById('chatMessages');
+
+        function addMessage(content, sender) {
+            const messageWrapper = document.createElement('div');
+            messageWrapper.className = `chat-message ${sender}-message`;
+            const bubble = document.createElement('div');
+            bubble.className = 'message-bubble';
+            
+            // Parse Markdown content if it's from AI and contains Markdown syntax
+            if (sender === 'ai' && typeof marked !== 'undefined' && content.includes('**')) {
+                // Configure marked for better formatting
+                marked.setOptions({
+                    breaks: true, // Convert \n to <br>
+                    gfm: true // GitHub Flavored Markdown
+                });
+                bubble.innerHTML = marked.parse(content);
+            } else {
+                bubble.innerHTML = content;
+            }
+            
+            messageWrapper.appendChild(bubble);
+            chatMessagesContainer.appendChild(messageWrapper);
+            return bubble;
+        }
+
+        // Add test messages
+        addMessage('Olá! Como posso ajudá-lo?', 'user');
+
+        addMessage(`Entendido. A necessidade é: **manutenção de computadores**
+
+👉 **Requisitos sugeridos:**
+- Experiência mínima de 3 anos
+- Cumprimento das normas de segurança
+- Relatórios mensais de execução
+
+Você gostaria de *manter esses requisitos*, **ajustar algum deles** ou incluir outros?`, 'ai');
+
+        addMessage('Perfeito! Os requisitos estão corretos.', 'user');
+
+        addMessage(`**Ótimo!** Vou proceder com a geração do ETP.
+
+## Informações coletadas:
+- **Necessidade:** Manutenção de computadores
+- **Requisitos confirmados:** 3 itens principais
+
+*Processando documento...*`, 'ai');
+    </script>
+</body>
+</html>

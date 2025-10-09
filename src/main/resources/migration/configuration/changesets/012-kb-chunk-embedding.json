@@ -1,0 +1,10 @@
+[
+  {
+    "key": "kb_chunk.migration.version",
+    "value": "012"
+  },
+  {
+    "key": "kb_chunk.embedding.column.added",
+    "value": "embedding TEXT column added to kb_chunk table"
+  }
+]
