@@ -28,16 +28,21 @@ def init_database(app, basedir):
     # Importar novos modelos KB (substituem os antigos do KnowledgeBaseDto)
     from domain.dto.KbDto import KbDocument, KbChunk, LegalNormCache
     
+    has_orm_models = all(
+        hasattr(model, "__table__") for model in (EtpSession, DocumentAnalysis, ChatSession, EtpTemplate)
+    )
+
     with app.app_context():
-        # Criar todas as tabelas usando SQLAlchemy (sem Liquibase)
-        print("🔧 Criando tabelas usando SQLAlchemy...")
-        db.create_all()
-        print("✅ Tabelas criadas com sucesso!")
-        
-        seed_demo_users()
-    
+        if has_orm_models:
+            print("🔧 Criando tabelas usando SQLAlchemy...")
+            db.create_all()
+            print("✅ Tabelas criadas com sucesso!")
+            seed_demo_users()
+        else:
+            print("⚠️ Modelos ORM não disponíveis; pulando criação automática de tabelas.")
+
     print(f"✅ Banco de dados configurado com sucesso!")
-    
+
     return db
 
 def seed_demo_users():
