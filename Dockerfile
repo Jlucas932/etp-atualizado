@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     curl \
     tini \
+    libgomp1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Cria diretório de trabalho
-WORKDIR /opt/az
+WORKDIR /app
 
 # Copia requirements primeiro para aproveitar cache de build
 COPY requirements.txt .
