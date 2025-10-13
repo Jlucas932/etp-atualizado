@@ -11,7 +11,7 @@ services:
       - FLASK_ENV=development
       - FLASK_DEBUG=1
       - PYTHONPATH=/app/src/main/python   # 🔹 Ajuste para achar o módulo rag
-      - DATABASE_URL=postgresql+psycopg2://az_etp_user:az_etp_password_2024@az_etp_postgres:5432/az_etp_db
+      - DATABASE_URL=postgresql+psycopg2://az_etp_user:az_etp_password_2024@postgres:5432/az_etp_db
     volumes:
       - .:/app
       - ./database:/app/database

@@ -8,7 +8,8 @@ from flask import Blueprint, request, jsonify, send_file
 from flask_cors import cross_origin
 
 from domain.interfaces.dataprovider.DatabaseConfig import db
-from domain.dto.EtpDto import EtpSession, DocumentAnalysis, KnowledgeBase, ChatSession, EtpTemplate
+from domain.dto.EtpOrm import EtpSession
+from domain.dto.EtpDto import DocumentAnalysis, KnowledgeBase, ChatSession, EtpTemplate
 from domain.usecase.etp.verify_federal import resolve_lexml, summarize_for_user, parse_legal_norm_string
 from application.config.LimiterConfig import limiter
 from rag.retrieval import search_requirements

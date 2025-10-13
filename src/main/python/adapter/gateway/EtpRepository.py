@@ -1,7 +1,7 @@
 from typing import Optional, List
 from domain.interfaces.repositories.EtpRepositoryInterface import EtpRepositoryInterface
 from domain.entities.EtpSession import EtpSession
-from domain.dto.EtpDto import EtpSession as EtpSessionDto
+from domain.dto.EtpOrm import EtpSession as EtpSessionDto
 from domain.interfaces.dataprovider.DatabaseConfig import db
 
 

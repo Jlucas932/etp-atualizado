@@ -7,7 +7,7 @@ from flask import Blueprint, request, jsonify, send_file, session
 from flask_cors import cross_origin
 
 from domain.interfaces.dataprovider.DatabaseConfig import db
-from domain.dto.EtpDto import EtpSession
+from domain.dto.EtpOrm import EtpSession
 from domain.dto.UserDto import User
 
 etp_bp = Blueprint('etp', __name__)

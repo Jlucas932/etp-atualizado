@@ -15,7 +15,7 @@ Werkzeug==3.1.3
 openai>=1.12.0
 python-docx==0.8.11
 requests==2.31.0
-python-dotenv==1.0.00
+python-dotenv==1.0.1
 # Dependências para PostgreSQL
 psycopg2-binary==2.9.9
 # Dependências para migrações Liquibase

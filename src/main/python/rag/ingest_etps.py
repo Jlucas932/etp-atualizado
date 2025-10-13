@@ -712,10 +712,17 @@ def main():
     parser = argparse.ArgumentParser(description="Ingestor de ETPs para base de conhecimento RAG")
     parser.add_argument("--rebuild", action="store_true", help="Limpar dados existentes antes da ingestão")
     parser.add_argument("--database-url", help="URL do banco de dados")
-    
+
     args = parser.parse_args()
-    
+
+    if args.database_url:
+        os.environ.setdefault("DATABASE_URL", args.database_url)
+
     try:
+        from application.config.FlaskConfig import create_api
+
+        app = create_api()
+
         # Configurar cliente OpenAI se disponível
         openai_client = None
         if os.getenv('OPENAI_API_KEY') and os.getenv('OPENAI_API_KEY') != 'test_key':
@@ -725,26 +732,27 @@ def main():
                 logger.info("Cliente OpenAI configurado")
             except ImportError:
                 logger.warning("Biblioteca openai não encontrada")
-        
-        # Executar ingestão (ETPIngestor cria suas próprias tabelas)
-        ingestor = ETPIngestor(args.database_url, openai_client)
-        success = ingestor.ingest_pdfs_and_jsonl(rebuild=args.rebuild)
-        
-        if success:
-            logger.info("✅ Ingestão concluída com sucesso!")
-            print("\n" + "="*50)
-            print("🎉 INGESTÃO CONCLUÍDA COM SUCESSO!")
-            print("="*50)
-            print("\nPróximos passos:")
-            print("1. Iniciar a aplicação: python src/main/python/applicationApi.py")
-            print("2. Testar a busca usando as funções do módulo retrieval")
-            print("\nExemplo de teste:")
-            print('retrieval.search_requirements("manutencao_computadores", "objetivo manutencao de pcs")')
-            sys.exit(0)
-        else:
-            logger.error("❌ Falha na ingestão")
-            sys.exit(1)
-                
+
+        with app.app_context():
+            # Executar ingestão (ETPIngestor utiliza o db compartilhado)
+            ingestor = ETPIngestor(openai_client=openai_client)
+            success = ingestor.ingest_pdfs_and_jsonl(rebuild=args.rebuild)
+
+            if success:
+                logger.info("✅ Ingestão concluída com sucesso!")
+                print("\n" + "="*50)
+                print("🎉 INGESTÃO CONCLUÍDA COM SUCESSO!")
+                print("="*50)
+                print("\nPróximos passos:")
+                print("1. Iniciar a aplicação: python src/main/python/applicationApi.py")
+                print("2. Testar a busca usando as funções do módulo retrieval")
+                print("\nExemplo de teste:")
+                print('retrieval.search_requirements("manutencao_computadores", "objetivo manutencao de pcs")')
+                sys.exit(0)
+            else:
+                logger.error("❌ Falha na ingestão")
+                sys.exit(1)
+
     except KeyboardInterrupt:
         logger.info("Ingestão cancelada pelo usuário")
         sys.exit(1)
