@@ -718,6 +718,7 @@ def main():
     if args.database_url:
         os.environ.setdefault("DATABASE_URL", args.database_url)
 
+    exit_code = 0
     try:
         from application.config.FlaskConfig import create_api
 
@@ -748,18 +749,20 @@ def main():
                 print("2. Testar a busca usando as funções do módulo retrieval")
                 print("\nExemplo de teste:")
                 print('retrieval.search_requirements("manutencao_computadores", "objetivo manutencao de pcs")')
-                sys.exit(0)
+                exit_code = 0
             else:
                 logger.error("❌ Falha na ingestão")
-                sys.exit(1)
+                exit_code = 1
 
     except KeyboardInterrupt:
         logger.info("Ingestão cancelada pelo usuário")
-        sys.exit(1)
+        exit_code = 1
     except Exception as e:
         logger.error(f"Erro na execução: {str(e)}")
-        sys.exit(1)
+        exit_code = 1
+
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -25,7 +25,6 @@ def init_database(app, basedir):
     # Importar modelos para garantir que sejam registrados
     from domain.dto.UserDto import User
     from domain.dto.EtpOrm import EtpSession
-    from domain.dto.EtpDto import DocumentAnalysis, ChatSession, EtpTemplate
     # Importar novos modelos KB (substituem os antigos do KnowledgeBaseDto)
     from domain.dto.KbDto import KbDocument, KbChunk, LegalNormCache
 
