@@ -39,7 +39,7 @@ def get_config_values():
         'rate_limit_per_minute': int(os.getenv('RATE_LIMIT_PER_MINUTE', '30')),
     }
 
-from flask import Flask, send_from_directory, request, g, current_app
+from flask import Flask, send_from_directory, request, g, current_app, session
 from flask_cors import CORS
 from application.config.LimiterConfig import limiter
 from domain.interfaces.dataprovider.DatabaseConfig import init_database, db
@@ -129,7 +129,7 @@ def create_api():
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'asdf#FGSgvasgf$5$WGT')
     
     # Configurar CORS para permitir requisições do frontend
-    CORS(app, origins="*")
+    CORS(app, origins="*", supports_credentials=True)
     
     # Configurar banco de dados
     init_database(app, basedir)
@@ -237,4 +237,11 @@ def create_api():
                 
                 return f"index.html not found. Static folder: {static_folder_path}", 404
     
+    @app.before_request
+    def _load_user_from_session():
+        """Propaga o user_id da sessão para g.user_id em todas as rotas"""
+        uid = session.get('user_id')
+        if uid:
+            g.user_id = str(uid)
+
     return app

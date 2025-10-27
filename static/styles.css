@@ -514,12 +514,15 @@ body {
     flex-direction: column; 
     max-width: 80%; 
 }
-.message-bubble { 
-    padding: 12px 16px; 
-    border-radius: 18px; 
-    line-height: 1.6; 
-    font-size: 15px; 
-    word-wrap: break-word; 
+.message-bubble {
+    padding: 12px 16px;
+    border-radius: 18px;
+    line-height: 1.6;
+    font-size: 15px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 .ai-message { 
     align-self: flex-start; 
@@ -677,11 +680,29 @@ body {
 
 /* === ÁREA DE INPUT DO CHAT === */
 /* Componente de entrada de texto para conversas com a IA */
-.chat-input-area { 
-    padding: 16px 32px; 
-    border-top: 1px solid var(--border-color); 
-    background-color: var(--main-bg); 
-    flex-shrink: 0; 
+.chat-input-area {
+    padding: 16px 32px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--main-bg);
+    flex-shrink: 0;
+}
+
+.chat-input-container,
+.chat-input {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.chat-input {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-input textarea {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 .chat-input-wrapper { 
     display: flex; 

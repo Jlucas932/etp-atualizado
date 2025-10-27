@@ -91,7 +91,7 @@ JUSTIF_BLOCK_RE = re.compile(
 
 # Somente essas chaves podem aparecer por etapa:
 STAGE_ALLOWED_KEYS = {
-    "suggest_requirements": {"requirements"},
+    "suggest_requirements": {"intro", "requirements"},
     "solution_strategies": {"strategies"},
     "pca": {"status", "text"},
     "legal_norms": {"norms"},
@@ -303,8 +303,8 @@ Você é um consultor de ETP que conversa de forma natural. Gere conteúdo origi
 
 Objetivo
 Entender a necessidade e responder como um consultor.
-Produzir requisitos mensuráveis (métrica/SLA/evidência/norma) marcando (Obrigatório)/(Desejável) e, ao final, justificar em 2–5 linhas por que os requisitos se encaixam no caso.
-Propor 3–5 estratégias de contratação ("melhor caminho") aderentes à necessidade (ex.: compra, leasing, outsourcing, comodato, contrato por desempenho, ARP). Para cada estratégia, incluir: Quando indicado, Vantagens, Riscos/Cuidados com Mitigação, Exemplo prático e Por que encaixa no caso.
+Produzir requisitos mensuráveis (métrica/SLA/evidência/norma) marcando (Obrigatório)/(Desejável), sem incluir blocos de justificativa nas respostas de chat.
+Propor 2 a 3 estratégias de contratação aderentes à necessidade (ex.: compra, leasing, outsourcing, comodato, contrato por desempenho, ARP), cada uma com lista de Prós e Contras.
 Tratar dados administrativos (PCA, normas, valor, parcelamento) sem travar: se o usuário não souber, registre "Pendente" e siga.
 
 Estilo
@@ -325,28 +325,26 @@ Tarefa: Gere requisitos (quantidade dinâmica 7–20 baseada na complexidade) ma
 - Média complexidade: 10-14 requisitos
 - Alta complexidade: 14-20 requisitos
 Cada requisito deve incluir métrica/SLA/evidência/norma quando aplicável.
-Ao final, forneça justificativa de 2–5 linhas explicando por que esses requisitos atendem à necessidade e por que escolheu essa quantidade."""
-    
+Não inclua blocos de justificativa ou conclusões narrativas; entregue apenas introdução curta e lista numerada."""
+
     elif stage == "refine":
         return base + """
 
 Tarefa: Refaça a lista completa de requisitos incorporando as preferências do usuário.
 Mantenha numeração, marcação (Obrigatório)/(Desejável) e métricas.
-Na justificativa, explique o que mudou e por quê."""
+Não gere justificativa; apenas traga a nova lista atualizada."""
     
     elif stage == "solution_strategies":
         return base + """
 
-Tarefa: Liste 3–5 estratégias de contratação aplicáveis (não etapas de ETP).
-Para cada estratégia, forneça:
-- Título (ex.: "Compra Direta", "Leasing Operacional")
-- Quando indicado
-- Vantagens
-- Riscos/Cuidados + Mitigação
-- Exemplo prático
-- Por que encaixa no caso
-
-Foco em modalidade/arranjo contratual e impacto na necessidade, não em instruções de ETP."""
+Tarefa: Liste 2 a 3 estratégias de contratação aplicáveis (não etapas de ETP).
+Para cada estratégia, forneça JSON com:
+{
+  "name": "título curto",
+  "pros": ["item", "item"],
+  "cons": ["item", "item"]
+}
+Não inclua justificativa, exemplo prático ou campos extras."""
     
     elif stage == "legal_refs":
         return base + """
@@ -372,14 +370,12 @@ def generate_answer(stage: str, history: List[Dict], user_input: str, rag_contex
         rag_context: Contexto RAG {chunks: [{text, id, score}...], necessity: str}
     
     Returns:
-        Dict estruturado SEM texto pré-definido, com campos conforme a etapa:
-        {
-            "intro": "texto consultivo curto (quando fizer sentido)",
-            "requirements": ["1. ...", "2. ...", ...],
-            "strategies": [{titulo, quando_indicado, vantagens, riscos, pontos_de_requisito_afetados}...],
-            "legal": [{norma, aplicacao}...],
-            "summary": "texto corrido pronto para prévia"
-        }
+        Dict estruturado SEM texto pré-definido, com campos conforme a etapa.
+        Exemplos:
+        - suggest_requirements → {"intro": "...", "requirements": [{"text": "...", "type": "Obrigatório"}, ...]}
+        - solution_strategies → {"strategies": [{"name": "...", "pros": [...], "cons": [...]}]}
+        - legal_refs → {"intro": "...", "legal": [{"norma": "...", "aplicacao": "..."}, ...]}
+        - summary → {"summary": "..."}
     """
     # Load JSON templates and select for stage
     templates = _load_templates_json()
@@ -517,8 +513,10 @@ Cada requisito deve seguir: obrigação clara + métrica mínima + forma de veri
 Formato de saída obrigatório em JSON:
 {{
   "intro": "parágrafo curto de contexto como consultor (2-4 linhas), sem perguntar nada",
-  "requirements": ["1. requisito...", "2. requisito..."],
-  "justification": "1 parágrafo curto opcional"
+  "requirements": [
+    {{"text": "1. requisito...", "type": "Obrigatório"}},
+    {{"text": "2. requisito...", "type": "Desejável"}}
+  ]
 }}
 """
 
@@ -536,14 +534,16 @@ Nova informação do usuário: {user_input}
 Contexto RAG:
 {rag_text if rag_text else "Nenhum contexto disponível."}
 
-Refine os requisitos integrando a nova informação do usuário. Re-emita a lista completa numerada e explique brevemente o que mudou.
+Refine os requisitos integrando a nova informação do usuário. Re-emita a lista completa numerada.
 Mantenha a marcação (Obrigatório)/(Desejável) quando aplicável.
 
 Retorne em formato JSON:
 {{
   "intro": "explicação breve das mudanças (2-4 linhas)",
-  "requirements": ["1. requisito atualizado um", "2. requisito dois", ...],
-  "justification": "1-2 frases explicando o que mudou e por quê"
+  "requirements": [
+    {{"text": "1. requisito atualizado um", "type": "Obrigatório"}},
+    {{"text": "2. requisito atualizado dois", "type": "Desejável"}}
+  ]
 }}"""
 
     elif stage == "solution_strategies":
@@ -559,7 +559,7 @@ Contexto RAG:
 {rag_text if rag_text else "Nenhum contexto disponível."}
 
 Proponha APENAS 2–3 estratégias de contratação coerentes com a necessidade e os requisitos aprovados.
-Para cada estratégia, retorne exclusivamente: name, when, pros (bullets curtos), cons (bullets curtos).
+Para cada estratégia, retorne exclusivamente: name, pros (bullets curtos), cons (bullets curtos).
 
 PROIBIDO nesta etapa:
 - "Justificativa da Contratação", "justificativas curtas", qualquer parágrafo narrativo
@@ -573,7 +573,6 @@ Retorne SOMENTE este JSON (sem intro, sem recommendation):
   "strategies": [
     {{
       "name": "Nome da estratégia",
-      "when": "Quando usar esta opção",
       "pros": ["pró 1", "pró 2"],
       "cons": ["contra 1", "contra 2"]
     }}
@@ -673,23 +672,29 @@ def _parse_response(stage: str, content: str, user_input: str, rag_context: Dict
             result = json.loads(json_str)
             # Apply key filtering to enforce stage schema
             result = _restrict_keys(stage, result)
+            if isinstance(result, dict):
+                result.pop('justification', None)
             return result
         else:
             # No JSON found, try to extract from text
             result = _extract_from_text(stage, content)
             result = _restrict_keys(stage, result)
+            if isinstance(result, dict):
+                result.pop('justification', None)
             return result
     
     except Exception as e:
         logger.warning(f"[GENERATOR] Failed to parse JSON, extracting from text: {e}")
         result = _extract_from_text(stage, content)
         result = _restrict_keys(stage, result)
+        if isinstance(result, dict):
+            result.pop('justification', None)
         return result
 
 def _extract_from_text(stage: str, content: str) -> Dict:
     """Extrai informação estruturada de texto não-JSON"""
     
-    if stage in ["collect_need", "refine"]:
+    if stage in ["collect_need", "refine", "suggest_requirements"]:
         # Extract numbered requirements ONLY - no intro or justification
         lines = content.split('\n')
         requirements = []
@@ -734,16 +739,31 @@ def _extract_from_text(stage: str, content: str) -> Dict:
             return s + " (Desejável)"
         
         requirements = [_ensure_od_tag(r) for r in requirements]
-        
+
+        def _to_requirement_dict(raw: str) -> Dict[str, str]:
+            text = raw.strip()
+            req_type = ''
+            # Capture trailing type marker
+            trailing_match = re.search(r'\((Obrigatório|Desejável)\)\s*$', text, re.IGNORECASE)
+            if trailing_match:
+                req_type = trailing_match.group(1).title()
+                text = re.sub(r'\((Obrigatório|Desejável)\)\s*$', '', text, flags=re.IGNORECASE).strip()
+            # Remove leading numbering
+            text = re.sub(r'^\s*\d+[\.)]\s*', '', text)
+            return {
+                'text': text.strip(),
+                'type': req_type
+            }
+
         # If requirements list is too short after filtering, signal failure
         if len(requirements) < 5:
             return {
                 "requirements": []
             }
-        
-        # Return ONLY requirements - no intro, no justification
+
+        structured = [_to_requirement_dict(r) for r in requirements if r.strip()]
         return {
-            "requirements": requirements if requirements else _get_default_requirements(stage, content)
+            "requirements": structured if structured else _get_default_requirements(stage, content)
         }
     
     elif stage == "solution_strategies":
@@ -752,11 +772,9 @@ def _extract_from_text(stage: str, content: str) -> Dict:
         return {
             "strategies": [
                 {
-                    "titulo": "Compra direta",
-                    "quando_indicado": "Quando há necessidade de propriedade permanente do bem",
-                    "vantagens": ["Propriedade definitiva", "Sem custos recorrentes"],
-                    "riscos": ["Alto investimento inicial", "Obsolescência"],
-                    "pontos_de_requisito_afetados": [1, 2, 3]
+                    "name": "Compra direta",
+                    "pros": ["Propriedade definitiva", "Sem custos recorrentes"],
+                    "cons": ["Alto investimento inicial", "Obsolescência"]
                 }
             ]
         }
@@ -776,21 +794,28 @@ def _extract_from_text(stage: str, content: str) -> Dict:
     
     return {}
 
-def _get_default_requirements(stage: str, necessity: str) -> List[str]:
+def _get_default_requirements(stage: str, necessity: str) -> List[Dict[str, str]]:
     """Gera requisitos padrão quando o modelo falha"""
     base = necessity[:50] if necessity else "contratação"
-    return [
-        f"1. Atender à necessidade de {base} conforme especificações técnicas",
-        "2. Garantir conformidade com Lei 14.133/2021 e normas aplicáveis",
-        "3. Fornecedor com experiência mínima de 2 anos no ramo",
-        "4. Garantia mínima de 12 meses contra defeitos de fabricação",
-        "5. Suporte técnico durante toda a vigência contratual",
-        "6. Treinamento de equipe técnica com certificação",
-        "7. Documentação técnica completa em português",
-        "8. Compatibilidade com infraestrutura existente",
-        "9. Prazo de entrega máximo de 60 dias corridos",
-        "10. Assistência técnica em até 48 horas úteis"
+    defaults = [
+        (f"Atender à necessidade de {base} conforme especificações técnicas", "Obrigatório"),
+        ("Garantir conformidade com Lei 14.133/2021 e normas aplicáveis", "Obrigatório"),
+        ("Fornecedor com experiência mínima de 2 anos no ramo", "Obrigatório"),
+        ("Garantia mínima de 12 meses contra defeitos de fabricação", "Obrigatório"),
+        ("Suporte técnico durante toda a vigência contratual", "Obrigatório"),
+        ("Treinamento de equipe técnica com certificação", "Desejável"),
+        ("Documentação técnica completa em português", "Obrigatório"),
+        ("Compatibilidade com infraestrutura existente", "Obrigatório"),
+        ("Prazo de entrega máximo de 60 dias corridos", "Obrigatório"),
+        ("Assistência técnica em até 48 horas úteis", "Obrigatório")
     ]
+    structured = []
+    for text, req_type in defaults:
+        structured.append({
+            'text': text,
+            'type': req_type
+        })
+    return structured
 
 def _validate_and_fix(stage: str, result: Dict, user_input: str, rag_context: Dict, 
                       client, model: str, system_prompt: str, messages: List[Dict]) -> Dict:
@@ -799,36 +824,45 @@ def _validate_and_fix(stage: str, result: Dict, user_input: str, rag_context: Di
     Política anti-lista-vazia e validação de qualidade.
     """
     
-    if stage in ["collect_need", "refine"]:
-        requirements = result.get('requirements', [])
-        
-        # Validate requirements
+    if stage in ["collect_need", "refine", "suggest_requirements"]:
+        raw_requirements = result.get('requirements', []) or []
+
+        normalized = []
+        for item in raw_requirements:
+            if isinstance(item, dict):
+                text = (item.get('text') or '').strip()
+                req_type = (item.get('type') or '').strip()
+            else:
+                text = str(item or '').strip()
+                req_type = ''
+            if not text:
+                continue
+            if '?' in text:
+                text = text.replace('?', '').strip()
+            normalized.append({
+                'text': text,
+                'type': req_type.title() if req_type else ''
+            })
+
         valid = True
         reasons = []
-        
-        # Check if empty
-        if not requirements or len(requirements) < 8:
+
+        if len(normalized) < 8:
             valid = False
             reasons.append("menos de 8 requisitos")
-        
-        # Check if all items are numbered
-        if requirements:
-            for req in requirements:
-                if not (req.strip() and req.strip()[0].isdigit()):
+
+        if normalized:
+            for req in normalized:
+                text = req.get('text', '')
+                if not text:
                     valid = False
-                    reasons.append("requisitos não numerados")
+                    reasons.append("requisito vazio")
                     break
-                
-                # Check for questions
-                if '?' in req:
-                    valid = False
-                    reasons.append("requisitos contêm perguntas")
-                    break
-        
+
         # If validation failed, try to regenerate
         if not valid:
             logger.warning(f"[VALIDATION:REGEN triggered] Reasons: {', '.join(reasons)}")
-            
+
             # Add corrective prompt
             corrective_prompt = f"""CORREÇÃO NECESSÁRIA: A resposta anterior falhou na validação ({', '.join(reasons)}).
 
@@ -837,9 +871,10 @@ Cada requisito deve ter formato: "N. [Obrigação clara] + [Métrica/valor míni
 Inclua pelo menos um item de SLA, um de conformidade regulatória, um de garantia/suporte e um de relatório/monitoramento.
 Marque (Obrigatório) ou (Desejável) quando aplicável.
 
-Retorne APENAS JSON válido com requisitos, SEM intro ou justification:
+Retorne APENAS JSON válido com requisitos, SEM intro extra:
 {{
-  "requirements": ["1. requisito um com métrica", "2. requisito dois com métrica", ...]
+  "intro": "parágrafo curto",
+  "requirements": [{{"text": "1. requisito um com métrica", "type": "Obrigatório"}}, {{"text": "2. requisito dois", "type": "Desejável"}}]
 }}"""
 
             try:
@@ -857,64 +892,67 @@ Retorne APENAS JSON válido com requisitos, SEM intro ou justification:
                 result = _parse_response(stage, content, user_input, rag_context)
                 
                 # If still invalid, use fallback
-                if not result.get('requirements') or len(result.get('requirements', [])) < 8:
+                regenerated = result.get('requirements') or []
+                if not regenerated or len(regenerated) < 8:
                     result['requirements'] = _get_default_requirements(stage, rag_context.get('necessity', user_input))
                     if 'intro' not in result or not result['intro']:
                         result['intro'] = ""
-                    if 'justification' not in result or not result['justification']:
-                        result['justification'] = ""
-                    
+
             except Exception as e:
                 logger.error(f"[GENERATOR] Regen failed: {e}")
                 result['requirements'] = _get_default_requirements(stage, rag_context.get('necessity', user_input))
                 if 'intro' not in result or not result['intro']:
                     result['intro'] = ""
-                if 'justification' not in result or not result['justification']:
-                    result['justification'] = ""
-    
+
+        else:
+            result['requirements'] = normalized
+
     return result
 
-def _fallback_requirements_min(necessity: str) -> List[str]:
+def _fallback_requirements_min(necessity: str) -> List[Dict[str, str]]:
     """Gera pelo menos 8-12 requisitos objetivos quando tudo falhar"""
     base = necessity[:60] if necessity else "contratação"
-    return [
-        f"1. Atender plenamente à necessidade de {base} conforme especificações técnicas e requisitos funcionais mínimos",
-        "2. Garantir conformidade com Lei 14.133/2021, legislação aplicável e normas técnicas do setor",
-        "3. Fornecedor com experiência comprovada mínima de 2 anos em contratos similares",
-        "4. Disponibilidade mínima de 99,5% mensal, com penalidades proporcionais por descumprimento",
-        "5. Garantia contra defeitos de fabricação/execução pelo prazo mínimo de 12 meses",
-        "6. Suporte técnico especializado em até 24 horas úteis, com SLA documentado",
-        "7. Treinamento de equipe técnica com certificação reconhecida e material didático",
-        "8. Documentação técnica completa em português brasileiro, incluindo manuais operacionais",
-        "9. Compatibilidade técnica com infraestrutura e sistemas já existentes",
-        "10. Relatórios mensais de desempenho, monitoramento e indicadores de qualidade",
-        "11. Prazo de entrega ou início de execução em até 60 dias corridos após assinatura",
-        "12. Conformidade com LGPD quando houver tratamento de dados pessoais"
+    defaults = [
+        (f"Atender plenamente à necessidade de {base} conforme especificações técnicas e requisitos funcionais mínimos", "Obrigatório"),
+        ("Garantir conformidade com Lei 14.133/2021, legislação aplicável e normas técnicas do setor", "Obrigatório"),
+        ("Fornecedor com experiência comprovada mínima de 2 anos em contratos similares", "Obrigatório"),
+        ("Disponibilidade mínima de 99,5% mensal, com penalidades proporcionais por descumprimento", "Obrigatório"),
+        ("Garantia contra defeitos de fabricação/execução pelo prazo mínimo de 12 meses", "Obrigatório"),
+        ("Suporte técnico especializado em até 24 horas úteis, com SLA documentado", "Obrigatório"),
+        ("Treinamento de equipe técnica com certificação reconhecida e material didático", "Desejável"),
+        ("Documentação técnica completa em português brasileiro, incluindo manuais operacionais", "Obrigatório"),
+        ("Compatibilidade técnica com infraestrutura e sistemas já existentes", "Obrigatório"),
+        ("Relatórios mensais de desempenho, monitoramento e indicadores de qualidade", "Obrigatório"),
+        ("Prazo de entrega ou início de execução em até 60 dias corridos após assinatura", "Obrigatório"),
+        ("Conformidade com LGPD quando houver tratamento de dados pessoais", "Obrigatório")
     ]
+    return [{'text': text, 'type': req_type} for text, req_type in defaults]
 
 def _fallback_strategies(necessity: str) -> List[Dict]:
     """Gera 2-3 estratégias quando o LLM falha - somente name/when/pros/cons"""
     base = necessity[:50] if necessity else "bem ou serviço"
-    return [
+    strategies = [
         {
             "name": "Contrato por Desempenho (Performance-Based)",
-            "when": f"Quando o foco está em resultados mensuráveis para {base}",
             "pros": ["Pagamento vinculado a resultados", "Incentivo à qualidade", "Redução de riscos operacionais"],
             "cons": ["Requer métricas bem definidas", "Dificuldade na mensuração inicial"]
         },
         {
             "name": "Outsourcing Integral",
-            "when": "Para necessidades que exigem gestão completa e especializada",
             "pros": ["Transferência total da operação", "Equipe dedicada", "Foco no core business"],
             "cons": ["Dependência do fornecedor", "Custo recorrente mais alto"]
         },
         {
             "name": "Locação com Opção de Compra",
-            "when": "Quando há incerteza sobre a necessidade de longo prazo ou teste de viabilidade",
             "pros": ["Menor investimento inicial", "Flexibilidade contratual", "Possibilidade de aquisição futura"],
             "cons": ["Custo total pode ser maior", "Limitações contratuais"]
         }
     ]
+    for strat in strategies:
+        strat['titulo'] = strat['name']
+        strat['vantagens'] = strat['pros']
+        strat['riscos'] = strat['cons']
+    return strategies
 
 def _post_process_response(resp: Dict, stage: str, prev_content: str = "") -> Dict:
     """
@@ -929,7 +967,7 @@ def _post_process_response(resp: Dict, stage: str, prev_content: str = "") -> Di
     # Check all text fields for command patterns
     command_pattern = r'\b(adicionar:|remover:|editar:)\b'
     
-    for key in ['intro', 'justification']:
+    for key in ['intro']:
         if key in resp and resp[key]:
             text = resp[key]
             if re.search(command_pattern, text, re.I):
@@ -938,15 +976,25 @@ def _post_process_response(resp: Dict, stage: str, prev_content: str = "") -> Di
                 text = ' '.join(text.split())  # Clean up whitespace
                 resp[key] = text
                 logger.warning(f"[POST_PROCESS] Removed command pattern from {key}")
-    
+
     # Check requirements for command patterns
     if 'requirements' in resp and resp['requirements']:
         cleaned_reqs = []
         for req in resp['requirements']:
-            if re.search(command_pattern, req, re.I):
-                req = re.sub(command_pattern, '', req, flags=re.I)
-                req = ' '.join(req.split())
-            cleaned_reqs.append(req)
+            if isinstance(req, dict):
+                text = req.get('text') or ''
+                if re.search(command_pattern, text, re.I):
+                    text = re.sub(command_pattern, '', text, flags=re.I)
+                    text = ' '.join(text.split())
+                    req['text'] = text
+                cleaned_reqs.append(req)
+            else:
+                if re.search(command_pattern, str(req), re.I):
+                    cleaned = re.sub(command_pattern, '', str(req), flags=re.I)
+                    cleaned = ' '.join(cleaned.split())
+                    cleaned_reqs.append(cleaned)
+                else:
+                    cleaned_reqs.append(req)
         resp['requirements'] = cleaned_reqs
     
     # Check for repetition if prev_content provided
@@ -964,21 +1012,40 @@ def _ensure_min_payload(resp: Dict, stage: str, necessity: str) -> Dict:
     Garantia mínima: nunca devolver payload vazio.
     Aplica sanity check para cada estágio crítico.
     """
-    if stage in {"collect_need", "refine"}:
+    if stage in {"collect_need", "refine", "suggest_requirements"}:
         # Intro vazio
         if not resp.get("intro") or resp.get("intro").strip() == "":
             resp["intro"] = f"Entendi sua necessidade: {necessity[:80]}. Vou propor requisitos objetivos e verificáveis alinhados a segurança, disponibilidade e conformidade."
-        
+
         # Requirements vazio ou insuficiente
-        requirements = resp.get("requirements") or []
-        if not requirements or len(requirements) < 8:
-            logger.warning(f"[ENSURE_MIN] Requirements vazio/insuficiente ({len(requirements)}), aplicando fallback")
-            resp["requirements"] = _fallback_requirements_min(necessity)
-        
-        # Justification vazio
-        if not resp.get("justification") or resp.get("justification").strip() == "":
-            resp["justification"] = "Os requisitos priorizam conformidade regulatória, segurança operacional, disponibilidade contratual e mensuração por indicadores objetivos."
-    
+        raw_requirements = resp.get("requirements") or []
+
+        normalized = []
+        for item in raw_requirements:
+            if isinstance(item, dict):
+                text = (item.get('text') or '').strip()
+                req_type = (item.get('type') or '').strip()
+            else:
+                text = str(item or '').strip()
+                req_type = ''
+            if not text:
+                continue
+            # Detect embedded type markers
+            trailing = re.search(r'\((Obrigatório|Desejável)\)\s*$', text, re.IGNORECASE)
+            if trailing and not req_type:
+                req_type = trailing.group(1).title()
+                text = re.sub(r'\((Obrigatório|Desejável)\)\s*$', '', text, flags=re.IGNORECASE).strip()
+            normalized.append({
+                'text': text,
+                'type': req_type.title() if req_type else ''
+            })
+
+        if len(normalized) < 8:
+            logger.warning(f"[ENSURE_MIN] Requirements vazio/insuficiente ({len(normalized)}), aplicando fallback")
+            normalized = _fallback_requirements_min(necessity)
+
+        resp["requirements"] = normalized
+
     elif stage == "solution_strategies":
         # Strategies vazio
         strategies = resp.get("strategies") or []
@@ -1008,17 +1075,15 @@ def _fallback_response(stage: str, user_input: str, rag_context: Dict) -> Dict:
     """Resposta de fallback quando há erro"""
     necessity = rag_context.get('necessity', user_input)
     
-    if stage in ["collect_need", "refine"]:
+    if stage in ["collect_need", "refine", "suggest_requirements"]:
         resp = {
             "intro": "",
-            "requirements": _get_default_requirements(stage, necessity),
-            "justification": ""
+            "requirements": _get_default_requirements(stage, necessity)
         }
         return _ensure_min_payload(resp, stage, necessity)
     
     elif stage == "solution_strategies":
         resp = {
-            "intro": "",
             "strategies": _fallback_strategies(necessity)
         }
         return _ensure_min_payload(resp, stage, necessity)

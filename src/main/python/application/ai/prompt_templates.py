@@ -4,24 +4,30 @@ Each template enforces JSON output and prohibits onboarding phrases.
 """
 
 PROMPT_SUGGEST_REQUIREMENTS = """
-Gere APENAS uma lista numerada de requisitos técnicos e operacionais, sem perguntas e sem textos de abertura.
-Cada item deve terminar com (Obrigatório) ou (Desejável) e incluir critério de verificação/auditoria.
+Gere introdução consultiva curta (1-3 frases) explicando o foco dos requisitos, seguida de lista numerada de requisitos técnicos e operacionais.
+Cada requisito deve terminar com (Obrigatório) ou (Desejável) e incluir critério de verificação/auditoria.
 É EXPRESSAMENTE PROIBIDO incluir:
 - "Descrição da Necessidade"
 - "Justificativa da Contratação" (em qualquer forma)
 - Frases como "Vamos começar", "Posso seguir", "Posso avançar"
+- Perguntas ao usuário
 
-Saída OBRIGATÓRIA (JSON estrito, somente esta chave):
-{"requirements": ["1. ... (Obrigatório)", "2. ... (Desejável)"]}
+Saída OBRIGATÓRIA (JSON estrito, somente estas chaves):
+{
+  "intro": "texto consultivo curto",
+  "requirements": [
+    {"text": "requisito com métrica", "type": "Obrigatório"},
+    {"text": "requisito com métrica", "type": "Desejável"}
+  ]
+}
 """
 
 PROMPT_SOLUTION_STRATEGIES = """
 Proponha APENAS 2–3 estratégias de contratação coerentes com a necessidade e os requisitos aprovados.
 Para cada estratégia, retorne exclusivamente:
   - name  (nome curto da estratégia)
-  - when  (em que contexto/condições a estratégia é indicada)
-  - pros  (bullets curtos)
-  - cons  (bullets curtos)
+  - pros  (lista com 2–4 prós curtos)
+  - cons  (lista com 2–4 contras curtos)
 
 PROIBIDO nesta etapa:
   - "Justificativa da Contratação", "justificativas curtas", qualquer parágrafo narrativo
@@ -31,8 +37,8 @@ PROIBIDO nesta etapa:
 Saída JSON **estrita** (apenas esta chave):
 {
   "strategies": [
-    {"name":"...","when":"...","pros":["...","..."],"cons":["...","..."]},
-    {"name":"...","when":"...","pros":["..."],"cons":["..."]}
+    {"name":"...","pros":["...","..."],"cons":["...","..."]},
+    {"name":"...","pros":["..."],"cons":["..."]}
   ]
 }
 """

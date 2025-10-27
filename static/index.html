@@ -48,8 +48,8 @@
             <!-- Rodapé da sidebar com informações do usuário -->
             <div class="sidebar-footer">
                 <div class="user-info">
-                    <div class="user-avatar" id="userAvatar">U</div>
-                    <span class="user-name" id="userName">Carregando...</span>
+                    <div class="user-avatar" id="currentUserInitials">U</div>
+                    <span class="user-name" id="currentUserName">Carregando...</span>
                 </div>
                 <div class="user-actions">
                     <button class="settings-btn" onclick="editUser()">
@@ -113,8 +113,8 @@
                 </div>
                 <!-- indicador de fase removido -->
                 <!-- All actions now via text input - no buttons -->
-                <footer class="chat-input-area">
-                    <div class="chat-input-wrapper">
+                <footer class="chat-input-area chat-input-container">
+                    <div class="chat-input-wrapper chat-input">
                         <button class="attach-btn" aria-label="Anexar arquivo">
                             <i class="fas fa-paperclip"></i>
                         </button>
