@@ -97,6 +97,33 @@ def apply_command_to_session(session, command_result, necessity):
         # Renumerar todos
         updated_requirements = renumber_requirements(updated_requirements)
         session.set_requirements(updated_requirements)
+    
+    elif intent == 'reorder':
+        # Reordenar requisitos de acordo com nova ordem
+        # items contém a nova ordem como lista de índices [2, 1, 3, ...]
+        if not items or not isinstance(items, list):
+            return  # Ordem inválida, não fazer nada
+        
+        # Criar mapa de índice atual para requisito
+        req_by_index = {}
+        for i, req in enumerate(current_requirements, 1):
+            req_by_index[i] = req
+        
+        # Reordenar baseado na nova ordem
+        updated_requirements = []
+        for new_pos_idx in items:
+            if new_pos_idx in req_by_index:
+                updated_requirements.append(req_by_index[new_pos_idx])
+        
+        # Adicionar requisitos que não foram mencionados na nova ordem (manter no final)
+        mentioned_indices = set(items)
+        for i in range(1, len(current_requirements) + 1):
+            if i not in mentioned_indices and i in req_by_index:
+                updated_requirements.append(req_by_index[i])
+        
+        # Renumerar todos
+        updated_requirements = renumber_requirements(updated_requirements)
+        session.set_requirements(updated_requirements)
 
 
 def escape_html(text):

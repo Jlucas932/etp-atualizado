@@ -1,7 +1,11 @@
 // === INICIALIZAÇÃO DA APLICAÇÃO UNIFICADA ===
 // Script principal que gerencia todas as funcionalidades do AutoDoc Licitação
+// usa window.renderTextSmart carregado antes
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Remover indicador de fase (fallback: some id/classes prováveis)
+    const phaseEl = document.querySelector('#phase, #stage, #stage-indicator, .phase, .phase-indicator');
+    if (phaseEl) { phaseEl.remove(); }
     initializeApp();
 });
 
@@ -10,8 +14,25 @@ document.addEventListener('DOMContentLoaded', function() {
 let currentOpenMenu = null; // Controla qual menu dropdown está aberto
 let originalParent = null; // Guarda o pai original do menu dropdown
 
-// PASSO 1A: Sessão persistente para ETP
-let SESSION_ID = localStorage.getItem("SESSION_ID") || null;
+// Conversation persistence for persistent chat
+let CONVERSATION_ID = localStorage.getItem("CONVERSATION_ID") || null;
+
+// Helper functions for conversation management
+function setConversationId(cid) {
+    if (!cid) return;
+    try {
+        CONVERSATION_ID = cid;
+        localStorage.setItem('CONVERSATION_ID', cid);
+        window.__CONVERSATION_ID__ = cid;
+        console.log('[CONVERSATION] Set conversation_id:', cid);
+    } catch(e) {
+        console.warn('Não foi possível salvar CONVERSATION_ID', e);
+    }
+}
+
+function getConversationId() {
+    return CONVERSATION_ID || window.__CONVERSATION_ID__ || localStorage.getItem('CONVERSATION_ID');
+}
 
 // Estado da conversa/documento atual
 let currentConversation = {
@@ -32,14 +53,9 @@ let etpState = {
     chosenOption: null // Opção escolhida pelo usuário
 };
 
-// Perguntas padrão para geração de ETP
-const ETP_QUESTIONS = [
-    "Qual a descrição da necessidade da contratação?",
-    "Possui demonstrativo de previsão no PCA (Plano de Contratações Anual)?",
-    "Quais normas legais pretende utilizar?",
-    "Qual o quantitativo e valor estimado?",
-    "Haverá parcelamento da contratação?"
-];
+// Perguntas padrão para geração de ETP - REMOVED per issue requirements
+// Flow now uses stage-based approach without ready-made questionnaires
+const ETP_QUESTIONS = [];
 
 // === ELEMENTOS DO DOM ===
 // Cache dos principais elementos para melhor performance
@@ -60,16 +76,16 @@ function initializeApp() {
     // INTEGRAÇÃO: Verificar autenticação antes de inicializar o sistema
     checkAuthentication();
     setupEventListeners();
-    // Adiciona alguns itens iniciais para demonstração
-    addToRecentItems("ETP - Compra de Carros", "document", true);
-    addToRecentItems("Dúvidas sobre a Lei 14.133", "chat", true);
-    addToRecentItems("Contrato de Manutenção", "document", true);
+    // Load conversation history from backend
+    loadConversationHistory();
 }
 
 // INTEGRAÇÃO: Verifica se o usuário está autenticado
 async function checkAuthentication() {
     try {
-        const response = await fetch('/api/auth/current');
+        const response = await fetch('/api/auth/current', {
+            credentials: 'include'
+        });
         const data = await response.json();
         
         if (!data.success || !data.authenticated) {
@@ -140,6 +156,27 @@ function setupEventListeners() {
             showHomeView(); // Volta para a home ao pressionar Esc
         }
     });
+
+    // Reset de conversa: botão/ação "Nova Conversa" dispara reset no servidor
+    const newConvEls = Array.from(document.querySelectorAll('#new-conversation, [data-action="new-conversation"], a[href="#new-conversation"]'));
+    newConvEls.forEach(el => {
+        el.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const sid = getSessionId();
+            await fetch('/api/etp-dynamic/conversation', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reset: true, session_id: sid })
+            }).catch(()=>{});
+            // limpa UI
+            document.getElementById('chat-log') && (document.getElementById('chat-log').innerHTML = '');
+            if (chatMessagesContainer) chatMessagesContainer.innerHTML = '';
+            const req = document.getElementById('requirements');
+            if (req) req.innerHTML = '';
+            addMessage('Vamos começar um novo ETP. Qual é a necessidade da contratação?', 'ai');
+        });
+    });
 }
 
 // === GERENCIAMENTO DE VIEWS ===
@@ -181,55 +218,294 @@ function selectDocument(docType) {
 }
 
 // Inicia uma nova conversa ou documento
-function startNewConversation(type, title = "Novo") {
+async function startNewConversation(type, title = "Novo") {
     showChatView();
     chatMessagesContainer.innerHTML = '';
     userInput.value = '';
-    etpState = { 
-        sessionId: 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-        questionIndex: 0, 
-        answers: [], 
-        isGenerating: false,
-        answeredQuestions: [],
-        extractedAnswers: {},
-        conversationHistory: [],
-        suggestedRequirements: [],
-        confirmedRequirements: [],
-        consultativeOptions: [],
-        inConsultativePhase: false,
-        chosenOption: null
-    };
-
-    currentConversation.type = type;
-    currentConversation.title = title;
-    chatTitle.textContent = currentConversation.title;
-
-    // Diferentes fluxos para documento vs chat livre
-    if (type === 'document') {
-        addMessage("Vamos juntos montar seu Estudo Técnico Preliminar. Para começar, me diga qual é a necessidade da contratação?", 'ai');
-    } else {
-        addMessage("Olá! Como posso ajudar você hoje?", 'ai');
-    }
     
-    userInput.focus();
+    // Call backend to create new conversation
+    try {
+        const response = await fetch('/api/etp-dynamic/new', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao criar nova conversa');
+        }
+        
+        console.log('[NEW] Created conversation:', data.conversation_id);
+        
+        // Set global conversation ID
+        setConversationId(data.conversation_id);
+        
+        // Initialize local state
+        etpState = { 
+            conversationId: data.conversation_id,
+            questionIndex: 0, 
+            answers: [], 
+            isGenerating: false,
+            answeredQuestions: [],
+            extractedAnswers: {},
+            conversationHistory: [],
+            suggestedRequirements: [],
+            confirmedRequirements: [],
+            consultativeOptions: [],
+            inConsultativePhase: false,
+            chosenOption: null
+        };
+
+        currentConversation.type = type;
+        currentConversation.title = data.title || title;
+        chatTitle.textContent = currentConversation.title;
+
+        // Add to sidebar with conversation_id
+        addToRecentItems(currentConversation.title, type, false, data.conversation_id);
+
+        // Initial greeting
+        addMessage("Olá! Vamos conversar sobre seu Estudo Técnico Preliminar. Qual é a necessidade da contratação?", 'ai');
+        
+        userInput.focus();
+    } catch (error) {
+        console.error('Error creating new conversation:', error);
+        alert('Erro ao criar nova conversa: ' + error.message);
+    }
 }
 
-// Processa o envio de mensagens do usuário
-function handleSendMessage() {
+// Track active streams by message ID
+const activeStreams = new Map();
+
+// Stream a message using Server-Sent Events (SSE)
+async function handleSendMessageStreaming() {
     const messageText = userInput.value.trim();
     if (messageText === '' || etpState.isGenerating) return;
+    
+    const conversationId = getConversationId();
+    if (!conversationId) {
+        alert('Nenhuma conversa ativa. Por favor, inicie uma nova conversa.');
+        return;
+    }
 
     addMessage(messageText, 'user');
     userInput.value = '';
+    
+    // Generate unique message ID for this request
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create empty AI message bubble that will be filled with streaming content
+    const aiMessageElement = addMessage('', 'ai');
+    const aiMessageContent = aiMessageElement.querySelector('.message-text') || aiMessageElement;
+    
+    // Add small typing indicator (non-blocking)
+    const typingIndicator = document.createElement('span');
+    typingIndicator.className = 'streaming-indicator';
+    typingIndicator.textContent = '▊';
+    typingIndicator.style.opacity = '0.5';
+    typingIndicator.style.animation = 'blink 1s infinite';
+    aiMessageContent.appendChild(typingIndicator);
+    
+    let fullText = '';
+    let eventSource = null;
+    
+    try {
+        // Use fetch to POST the message, then establish SSE connection
+        const response = await fetch('/api/etp-dynamic/chat-stream', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                session_id: conversationId,
+                message: messageText,
+                message_id: messageId
+            })
+        });
 
-    // Delay para simular processamento
-    setTimeout(() => {
-        if (currentConversation.type === 'document') {
-            handleDocumentFlow(messageText);
-        } else {
-            getAIChatResponse();
+        if (!response.ok) {
+            throw new Error('Failed to initiate streaming');
         }
-    }, 500);
+
+        // Read the response as a stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        
+        // Store active stream
+        activeStreams.set(messageId, { reader, aiMessageContent });
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            
+            if (done) {
+                break;
+            }
+            
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split('\n');
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const data = line.substring(6);
+                    
+                    try {
+                        const event = JSON.parse(data);
+                        
+                        if (event.type === 'token') {
+                            // Append token to message buffer
+                            fullText += event.content;
+                            typingIndicator.remove();
+                            
+                            // Use renderTextSmart if available, with throttling
+                            if (typeof window.renderTextSmart === 'function') {
+                                // Store buffer in dataset for re-rendering
+                                aiMessageContent.dataset.buf = fullText;
+                                aiMessageContent.dataset.stage = event.stage || etpState.currentStage || '';
+                                
+                                // Throttle rendering during streaming
+                                if (!aiMessageContent._rendering) {
+                                    aiMessageContent._rendering = true;
+                                    requestAnimationFrame(() => {
+                                        window.renderTextSmart(aiMessageContent, aiMessageContent.dataset.buf, aiMessageContent.dataset.stage);
+                                        aiMessageContent._rendering = false;
+                                    });
+                                }
+                            } else {
+                                // Fallback to simple text
+                                aiMessageContent.textContent = fullText;
+                            }
+                            
+                            aiMessageContent.appendChild(typingIndicator);
+                            
+                            // Auto-scroll to bottom
+                            chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                            
+                        } else if (event.type === 'final') {
+                            // Backend sends final sanitized content for re-rendering
+                            fullText = event.content;
+                            aiMessageContent.dataset.buf = fullText;
+                            const stage = event.stage || aiMessageContent.dataset.stage || etpState.currentStage || '';
+                            
+                            if (typeof window.renderTextSmart === 'function') {
+                                window.renderTextSmart(aiMessageContent, fullText, stage);
+                            } else {
+                                aiMessageContent.textContent = fullText;
+                            }
+                            
+                        } else if (event.type === 'done') {
+                            // Stream complete - final render with renderTextSmart
+                            typingIndicator.remove();
+                            const finalText = fullText || event.full_response || 'Resposta concluída.';
+                            const stage = event.stage || aiMessageContent.dataset.stage || etpState.currentStage || '';
+                            
+                            if (typeof window.renderTextSmart === 'function') {
+                                window.renderTextSmart(aiMessageContent, finalText, stage);
+                            } else {
+                                aiMessageContent.textContent = finalText;
+                            }
+                            
+                            // Update state if needed
+                            if (event.state_changed) {
+                                console.log(`[STREAM] State changed to: ${event.state}`);
+                            }
+                            
+                        } else if (event.type === 'error') {
+                            // Stream error
+                            typingIndicator.remove();
+                            aiMessageContent.textContent = `Erro: ${event.error}`;
+                            aiMessageElement.classList.add('error');
+                        }
+                        
+                    } catch (parseError) {
+                        console.warn('Failed to parse SSE data:', data, parseError);
+                    }
+                }
+            }
+        }
+        
+        // Clean up
+        activeStreams.delete(messageId);
+        
+    } catch (error) {
+        console.error('Error in streaming:', error);
+        typingIndicator.remove();
+        aiMessageContent.textContent = 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.';
+        aiMessageElement.classList.add('error');
+        activeStreams.delete(messageId);
+    }
+}
+
+// Processa o envio de mensagens do usuário
+async function handleSendMessage() {
+    // Check if streaming is enabled (default to true)
+    const useStreaming = localStorage.getItem('useStreaming') !== 'false';
+    
+    if (useStreaming) {
+        return handleSendMessageStreaming();
+    }
+    
+    // Fallback to non-streaming version
+    const messageText = userInput.value.trim();
+    if (messageText === '' || etpState.isGenerating) return;
+    
+    const conversationId = getConversationId();
+    if (!conversationId) {
+        alert('Nenhuma conversa ativa. Por favor, inicie uma nova conversa.');
+        return;
+    }
+
+    addMessage(messageText, 'user');
+    userInput.value = '';
+    etpState.isGenerating = true;
+
+    // Show typing indicator
+    const thinkingBubble = addMessage('<div class="typing-indicator"><span></span><span></span><span></span></div>', 'ai');
+
+    try {
+        // Use stage-based endpoint for deterministic flow
+        const response = await fetch('/api/etp-dynamic/chat-stage', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                message: messageText
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao enviar mensagem');
+        }
+
+        // Remove thinking bubble and add AI response
+        thinkingBubble.remove();
+        
+        // Display AI response
+        addMessage(data.ai_response, 'ai');
+        
+        // If requirements are returned, store them
+        if (data.requirements) {
+            etpState.suggestedRequirements = data.requirements;
+        }
+        
+        // Preview is handled via code block in the AI response message itself
+        // No separate download links block needed
+
+    } catch (error) {
+        console.error('Error sending message:', error);
+        thinkingBubble.remove();
+        addMessage('Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.', 'ai');
+    } finally {
+        etpState.isGenerating = false;
+    }
 }
 
 // Simula resposta da IA para chat livre
@@ -256,6 +532,7 @@ async function handleConsultativeConversation(userMessage) {
     try {
         const response = await fetch('/api/etp-dynamic/option-conversation', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -314,135 +591,43 @@ async function handleConsultativeConversation(userMessage) {
 
 // Gerencia o fluxo de conversa natural para coleta de informações do ETP usando modelo fine-tuned
 async function handleDocumentFlow(userMessage) {
-    // Verificar se está na fase consultiva
-    if (etpState.inConsultativePhase) {
-        await handleConsultativeConversation(userMessage);
-        return;
-    }
-    
-    // Adicionar mensagem do usuário ao histórico da conversa
-    etpState.conversationHistory.push({
-        role: 'user',
-        content: userMessage
-    });
-    
-    // Mostrar indicador de processamento
-    const thinkingBubble = addMessage('<div class="typing-indicator"><span></span><span></span><span></span></div>', 'ai');
-    
-    try {
-        // Fazer chamada para o modelo fine-tuned com tratamento de erro de rede
-        let response;
-        try {
-            response = await fetch('/api/etp-dynamic/conversation', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    message: userMessage,
-                    session_id: SESSION_ID,
-                    conversation_history: etpState.conversationHistory.slice(0, -1), // Excluir a mensagem atual já enviada
-                    answered_questions: etpState.answeredQuestions,
-                    extracted_answers: etpState.extractedAnswers
-                })
-            });
-        } catch (networkError) {
-            // Resiliência de rede: erro transitório sem resetar sessão
-            thinkingBubble.remove();
-            addMessage('Erro de conexão. Tente novamente em alguns instantes.', 'ai', {kind: 'text'});
-            return;
-        }
-        
-        const data = await response.json();
-        
-        // PASSO 1A: Capturar e persistir session_id
-        if (!SESSION_ID && data.session_id) {
-            SESSION_ID = data.session_id;
-            localStorage.setItem("SESSION_ID", SESSION_ID);
-        }
-        
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Erro na conversa com IA');
-        }
-        
-        const aiResponse = data.ai_response;
-        
-        // Adicionar resposta da IA ao histórico da conversa
-        etpState.conversationHistory.push({
-            role: 'assistant',
-            content: aiResponse
-        });
-        
-        // Remover indicador de processamento e mostrar resposta
-        thinkingBubble.remove();
-        
-        // PASSO 1B - Usar responseData se disponível para renderização estruturada
-        if (data.kind) {
-            addMessage(aiResponse, 'ai', data);
-        } else {
-            addMessage(aiResponse, 'ai');
-        }
-        
-        // All responses are now handled as regular chat messages
-        // No UI interruption for requirement suggestions
-        
-        // Analisar se a conversa está completa executando análise semântica em paralelo
-        analyzeConversationProgress(userMessage);
-        
-    } catch (error) {
-        // Remover indicador de processamento em caso de erro
-        thinkingBubble.remove();
-        
-        console.error('Erro na conversa:', error);
-        addMessage('Desculpe, ocorreu um erro ao processar sua mensagem. Pode tentar novamente?', 'ai');
-    }
+    // Novo fluxo: usa pipeline (UM POST /conversation por turno, sem auto-avanço)
+    await pipeline(userMessage);
 }
 
-// Analisa o progresso da conversa para determinar quando todas as informações foram coletadas
-async function analyzeConversationProgress(lastUserMessage) {
-    try {
-        // Usar a análise semântica para verificar se novas informações foram coletadas
-        const response = await fetch('/api/etp-dynamic/analyze-response', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                message: lastUserMessage,
-                session_id: SESSION_ID,
-                response: lastUserMessage,
-                answered_questions: etpState.answeredQuestions
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok && data.success) {
-            const analysis = data.analysis;
-            
-            // Atualizar estado com as novas respostas identificadas
-            analysis.answered_questions.forEach(questionId => {
-                if (!etpState.answeredQuestions.includes(questionId)) {
-                    etpState.answeredQuestions.push(questionId);
-                }
-            });
-            
-            // Mesclar respostas extraídas para armazenamento
-            Object.assign(etpState.extractedAnswers, analysis.extracted_answers);
-            
-            // Verificar se todas as 5 perguntas foram respondidas
-            if (analysis.all_questions_answered) {
-                setTimeout(() => {
-                    etpState.isGenerating = true;
-                    addMessage("Perfeito! Coletei todas as informações necessárias. Antes de gerar o ETP, vou apresentar algumas opções de solução para você analisar...", 'ai');
-                    setTimeout(generateConsultativeOptions, 2000);
-                }, 1000);
-            }
-        }
-        
-    } catch (error) {
-        console.error('Erro na análise de progresso:', error);
-        // Não mostrar erro para o usuário, já que isso é processamento em background
+// Novo pipeline: UMA única ida ao backend /conversation por turno
+async function pipeline(message) {
+    const sid = getSessionId();
+    const res = await fetch('/api/etp-dynamic/conversation', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, session_id: sid })
+    });
+    if (!res.ok) {
+        addMessage('Algo deu errado. Tente reformular sua mensagem.', 'ai');
+        return;
+    }
+    const data = await res.json();
+    
+    // IMPORTANTE: Capturar session_id se for nova sessão
+    if (data.session_id && !SESSION_ID) {
+        setSessionId(data.session_id);
+        // Adicionar conversa na sidebar
+        addToRecentItems(`ETP - ${new Date().toLocaleDateString()}`, 'document', false);
+    }
+    
+    // Se há requisitos, usar renderização conversacional (única mensagem)
+    if (Array.isArray(data.requirements) && data.requirements.length > 0) {
+        // Usar a função do requirements_renderer.js
+        const reqMessage = window.renderRequirementsMessage 
+            ? window.renderRequirementsMessage(data) 
+            : data.requirements.map((r, i) => `${i + 1}. ${typeof r === 'string' ? r : (r.text || String(r))}`).join('\n');
+        addMessage(reqMessage, 'ai');
+    } 
+    // Senão, mensagem principal do assistente
+    else if (data.message || data.response || data.ai_response) {
+        addMessage(data.message || data.response || data.ai_response, 'ai');
     }
 }
 
@@ -460,6 +645,7 @@ async function confirmRequirements(action, requirements, message) {
         
         const response = await fetch('/api/etp-dynamic/confirm-requirements', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -497,6 +683,27 @@ async function confirmRequirements(action, requirements, message) {
 
 // Adiciona uma mensagem ao chat
 function addMessage(content, sender, responseData = null) {
+    // Enhanced guard against empty content - render placeholder instead of empty bubble
+    if (!content || (typeof content === 'string' && !content.trim())) {
+        if (!responseData || !responseData.kind) {
+            console.warn('[EMPTY_BUBBLE_GUARD] Empty content detected, rendering placeholder');
+            // For AI messages, render a placeholder that can be updated later
+            if (sender === 'ai') {
+                const messageWrapper = document.createElement('div');
+                messageWrapper.className = `chat-message ${sender}-message`;
+                const bubble = document.createElement('div');
+                bubble.className = 'message-bubble msg-placeholder';
+                bubble.innerHTML = '<div class="placeholder-spinner"></div><span>Preparando resposta…</span>';
+                messageWrapper.appendChild(bubble);
+                chatMessagesContainer.appendChild(messageWrapper);
+                chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+                return bubble;
+            }
+            // For user messages, don't render at all
+            return null;
+        }
+    }
+    
     const messageWrapper = document.createElement('div');
     messageWrapper.className = `chat-message ${sender}-message`;
     const bubble = document.createElement('div');
@@ -518,6 +725,9 @@ function addMessage(content, sender, responseData = null) {
         // Sanitizar conteúdo antes do parsing
         const sanitizedContent = sanitizeJsonInText(content);
         bubble.innerHTML = marked.parse(sanitizedContent);
+        
+        // After rendering, detect and enhance etp-preview code blocks
+        enhanceEtpPreviewBlocks(bubble);
     } else {
         // Sanitizar conteúdo básico
         const sanitizedContent = sanitizeJsonInText(content);
@@ -569,6 +779,299 @@ function sanitizeJsonInText(text) {
     return sanitized.trim();
 }
 
+// Enhance ETP preview code blocks with download button
+function enhanceEtpPreviewBlocks(container) {
+    // Find all code blocks with language "etp-preview"
+    const codeBlocks = container.querySelectorAll('pre code.language-etp-preview');
+    
+    codeBlocks.forEach(codeBlock => {
+        const pre = codeBlock.parentElement;
+        
+        // Add class for styling
+        pre.classList.add('etp-preview-block');
+        
+        // Get ETP content
+        const etpContent = codeBlock.textContent;
+        
+        // Create wrapper for preview and sticky button
+        const previewWrapper = document.createElement('div');
+        previewWrapper.className = 'etp-preview-wrapper';
+        previewWrapper.style.position = 'relative';
+        
+        // Wrap the pre element
+        pre.parentNode.insertBefore(previewWrapper, pre);
+        previewWrapper.appendChild(pre);
+        
+        // Create sticky button container
+        const stickyButtonContainer = document.createElement('div');
+        stickyButtonContainer.className = 'etp-sticky-buttons';
+        stickyButtonContainer.style.position = 'sticky';
+        stickyButtonContainer.style.bottom = '16px';
+        stickyButtonContainer.style.right = '16px';
+        stickyButtonContainer.style.display = 'flex';
+        stickyButtonContainer.style.gap = '8px';
+        stickyButtonContainer.style.justifyContent = 'flex-end';
+        stickyButtonContainer.style.paddingTop = '8px';
+        stickyButtonContainer.style.zIndex = '10';
+        
+        // Create HTML download button
+        const downloadHtmlBtn = document.createElement('button');
+        downloadHtmlBtn.className = 'etp-download-btn html';
+        downloadHtmlBtn.innerHTML = '📄 HTML';
+        downloadHtmlBtn.title = 'Baixar como HTML';
+        downloadHtmlBtn.setAttribute('aria-label', 'Baixar documento ETP em formato HTML');
+        downloadHtmlBtn.onclick = () => downloadEtpDocument(etpContent);
+        
+        // Create DOCX download button
+        const downloadDocxBtn = document.createElement('button');
+        downloadDocxBtn.className = 'etp-download-btn docx';
+        downloadDocxBtn.innerHTML = '📝 DOCX';
+        downloadDocxBtn.title = 'Baixar como DOCX';
+        downloadDocxBtn.setAttribute('aria-label', 'Baixar documento ETP em formato DOCX');
+        downloadDocxBtn.disabled = false;
+        downloadDocxBtn.onclick = () => downloadEtpDocx();
+        
+        // Add buttons to container
+        stickyButtonContainer.appendChild(downloadHtmlBtn);
+        stickyButtonContainer.appendChild(downloadDocxBtn);
+        
+        // Add sticky container to wrapper
+        previewWrapper.appendChild(stickyButtonContainer);
+        
+        console.log('[ETP_PREVIEW] Enhanced ETP preview block with sticky download buttons');
+    });
+}
+
+// Download ETP document as DOCX
+async function downloadEtpDocx() {
+    console.log('[ETP_DOWNLOAD] Generating DOCX document');
+    
+    const conversationId = getConversationId();
+    if (!conversationId) {
+        alert('Nenhuma conversa ativa. Por favor, inicie uma nova conversa.');
+        return;
+    }
+    
+    // Find the DOCX button and disable it during generation
+    const docxButtons = document.querySelectorAll('.etp-download-btn.docx');
+    docxButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.innerHTML = '⏳ Gerando...';
+    });
+    
+    try {
+        const response = await fetch('/api/etp-dynamic/export/docx', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                session_id: conversationId,
+                title: 'Estudo Técnico Preliminar',
+                organ: 'Órgão Contratante',
+                object: 'Contratação'
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erro ao gerar documento DOCX');
+        }
+        
+        // Download the file
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ETP-${conversationId.substring(0, 8)}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        console.log('[ETP_DOWNLOAD] DOCX document downloaded successfully');
+        
+    } catch (error) {
+        console.error('[ETP_DOWNLOAD] Error generating DOCX:', error);
+        alert(`Erro ao gerar documento DOCX: ${error.message}`);
+        
+    } finally {
+        // Re-enable button
+        docxButtons.forEach(btn => {
+            btn.disabled = false;
+            btn.innerHTML = '📝 DOCX';
+        });
+    }
+}
+
+// Download ETP document as styled HTML
+function downloadEtpDocument(etpContent) {
+    console.log('[ETP_DOWNLOAD] Generating document for download');
+    
+    // Generate styled HTML document
+    const htmlDoc = generateStyledEtpHtml(etpContent);
+    
+    // Create blob and download
+    const blob = new Blob([htmlDoc], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ETP_${new Date().getTime()}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    console.log('[ETP_DOWNLOAD] Document downloaded successfully');
+}
+
+// Generate styled HTML document based on ETP template design
+function generateStyledEtpHtml(content) {
+    // Convert markdown to HTML if needed
+    let htmlContent = content;
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+        htmlContent = marked.parse(content);
+    }
+    
+    // Create full HTML document with professional styling
+    return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estudo Técnico Preliminar (ETP)</title>
+    <style>
+        @page {
+            margin: 2.5cm;
+        }
+        
+        body {
+            font-family: 'Calibri', 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 21cm;
+            margin: 0 auto;
+            padding: 2.5cm;
+            background: #fff;
+        }
+        
+        h1 {
+            color: #003366;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 10px;
+            margin-top: 0;
+            font-size: 24pt;
+            text-align: center;
+        }
+        
+        h2 {
+            color: #003366;
+            border-bottom: 2px solid #0066cc;
+            padding-bottom: 5px;
+            margin-top: 30px;
+            font-size: 18pt;
+        }
+        
+        h3 {
+            color: #0066cc;
+            margin-top: 20px;
+            font-size: 14pt;
+        }
+        
+        h4 {
+            color: #003366;
+            margin-top: 15px;
+            font-size: 12pt;
+        }
+        
+        p {
+            text-align: justify;
+            margin: 10px 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 11pt;
+        }
+        
+        table th {
+            background-color: #003366;
+            color: white;
+            padding: 10px;
+            text-align: left;
+            border: 1px solid #003366;
+        }
+        
+        table td {
+            padding: 8px;
+            border: 1px solid #ccc;
+        }
+        
+        table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        ul, ol {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 5px 0;
+        }
+        
+        strong {
+            color: #003366;
+        }
+        
+        .metadata {
+            text-align: right;
+            color: #666;
+            font-size: 10pt;
+            margin-bottom: 30px;
+        }
+        
+        hr {
+            border: none;
+            border-top: 1px solid #0066cc;
+            margin: 20px 0;
+        }
+        
+        @media print {
+            body {
+                padding: 0;
+            }
+            
+            h1, h2 {
+                page-break-after: avoid;
+            }
+            
+            table {
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    ${htmlContent}
+</body>
+</html>`;
+}
+
+// Export functions to global namespace for access
+if (typeof window !== 'undefined') {
+    window.AutoDoc = window.AutoDoc || {};
+    window.AutoDoc.downloadEtpPreview = downloadEtpDocument;
+    window.AutoDoc.enhanceEtpPreviewBlocks = enhanceEtpPreviewBlocks;
+}
+
 // Escapa HTML para prevenir XSS
 function escapeHtml(text) {
     const map = {
@@ -608,86 +1111,10 @@ function streamResponse(bubbleElement, text) {
 
 // Funções de sugestões removidas - o novo fluxo usa conversa natural sem botões
 
-// Gera opções consultivas baseadas nas respostas coletadas
+// REMOVIDO: consultative-options (auto-avanço). O servidor decide transições.
+// Esta função não deve mais disparar nada automaticamente.
 async function generateConsultativeOptions() {
-    try {
-        // Mostrar indicador de processamento
-        const thinkingBubble = addMessage('<div class="typing-indicator"><span></span><span></span><span></span></div>', 'ai');
-        
-        const response = await fetch('/api/etp-dynamic/consultative-options', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                session_id: SESSION_ID,
-                extracted_answers: etpState.extractedAnswers
-            })
-        });
-        
-        const data = await response.json();
-        
-        // Remover indicador de processamento
-        thinkingBubble.remove();
-        
-        if (!response.ok || !data.success) {
-            throw new Error(data.error || 'Erro ao gerar opções consultivas');
-        }
-        
-        // Armazenar opções no estado
-        etpState.consultativeOptions = data.options;
-        etpState.inConsultativePhase = true;
-        etpState.isGenerating = false;
-        
-        // Apresentar mensagem consultiva
-        addMessage(data.consultative_message, 'ai');
-        
-        // Apresentar cada opção de forma natural
-        setTimeout(() => {
-            presentOptionsNaturally(data.options);
-        }, 1500);
-        
-    } catch (error) {
-        console.error('Erro ao gerar opções consultivas:', error);
-        addMessage('Desculpe, ocorreu um erro ao gerar as opções. Vou proceder diretamente com a geração do ETP.', 'ai');
-        setTimeout(() => {
-            etpState.inConsultativePhase = false;
-            generateDocumentPreview();
-        }, 2000);
-    }
-}
-
-// Apresenta as opções de forma natural, como conversa
-function presentOptionsNaturally(options) {
-    options.forEach((option, index) => {
-        setTimeout(() => {
-            let optionMessage = `**${option.name}**\n\n${option.summary}\n\n`;
-            
-            if (option.pros && option.pros.length > 0) {
-                optionMessage += `**Vantagens:**\n`;
-                option.pros.forEach(pro => {
-                    optionMessage += `• ${pro}\n`;
-                });
-                optionMessage += '\n';
-            }
-            
-            if (option.cons && option.cons.length > 0) {
-                optionMessage += `**Pontos de atenção:**\n`;
-                option.cons.forEach(con => {
-                    optionMessage += `• ${con}\n`;
-                });
-            }
-            
-            addMessage(optionMessage, 'ai');
-            
-            // Após apresentar todas as opções, perguntar qual escolher
-            if (index === options.length - 1) {
-                setTimeout(() => {
-                    addMessage("Essas são as principais alternativas que identifiquei. Você pode me perguntar mais detalhes sobre qualquer uma delas, sugerir uma terceira opção, ou me dizer qual prefere seguir. O que acha?", 'ai');
-                }, 1000);
-            }
-        }, (index + 1) * 2000);
-    });
+    return null;
 }
 
 // Gera o preview do documento ETP
@@ -775,13 +1202,14 @@ function renderSearchResults(query = '') {
 // Gerenciamento de itens recentes e navegação lateral
 
 // Adiciona um item à lista de recentes
-function addToRecentItems(name, type, isInitial = false) {
+function addToRecentItems(name, type, isInitial = false, sessionId = null) {
     const recentItemsContainer = document.querySelector('.recent-items');
     const iconClass = type === 'chat' ? 'fas fa-comments' : 'fas fa-file-alt';
     
     const newItem = document.createElement('div');
     newItem.className = 'recent-item';
     newItem.dataset.type = type; // Importante para a busca e para abrir a conversa
+    newItem.dataset.sessionId = sessionId; // Store session_id
     
     newItem.innerHTML = `
         <i class="${iconClass} item-icon"></i>
@@ -799,7 +1227,12 @@ function addToRecentItems(name, type, isInitial = false) {
     // Event listener para abrir conversa ao clicar no item
     newItem.addEventListener('click', (e) => {
         if (!e.target.closest('.item-menu')) {
-            startNewConversation(type, name);
+            const sid = newItem.dataset.sessionId;
+            if (sid) {
+                openConversation(sid);
+            } else {
+                startNewConversation(type, name);
+            }
         }
     });
 
@@ -808,6 +1241,100 @@ function addToRecentItems(name, type, isInitial = false) {
         recentItemsContainer.appendChild(newItem);
     } else {
         recentItemsContainer.insertBefore(newItem, recentItemsContainer.firstChild);
+    }
+}
+
+// Load conversation history from backend
+async function loadConversationHistory() {
+    try {
+        const response = await fetch('/api/etp-dynamic/list', {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+            console.error('Failed to load conversation history:', data.error);
+            return;
+        }
+        
+        console.log('[LIST] Loaded', data.conversations.length, 'conversations');
+        
+        // Clear existing items
+        const recentItemsContainer = document.querySelector('.recent-items');
+        recentItemsContainer.innerHTML = '';
+        
+        // Add conversations to sidebar with conversation_id
+        data.conversations.forEach(conv => {
+            addToRecentItems(conv.title, 'document', true, conv.id);
+        });
+    } catch (error) {
+        console.error('Error loading conversation history:', error);
+    }
+}
+
+// Open existing conversation
+async function openConversation(conversationId) {
+    try {
+        const response = await fetch(`/api/etp-dynamic/open/${conversationId}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao abrir conversa');
+        }
+        
+        console.log('[OPEN] Opening conversation:', conversationId, 'with', data.messages.length, 'messages');
+        
+        // Set global conversation ID
+        setConversationId(data.id);
+        
+        // Show chat view and clear messages
+        showChatView();
+        chatMessagesContainer.innerHTML = '';
+        
+        // Update UI
+        currentConversation.type = 'document';
+        currentConversation.title = data.title;
+        chatTitle.textContent = data.title;
+        
+        // Initialize state
+        etpState = { 
+            conversationId: data.id,
+            questionIndex: 0, 
+            answers: {}, 
+            isGenerating: false,
+            answeredQuestions: [],
+            extractedAnswers: {},
+            conversationHistory: [],
+            suggestedRequirements: [],
+            confirmedRequirements: [],
+            consultativeOptions: [],
+            inConsultativePhase: false,
+            chosenOption: null
+        };
+        
+        // Render all messages from database
+        data.messages.forEach(msg => {
+            const role = msg.role === 'user' ? 'user' : 'ai';
+            addMessage(msg.content, role);
+        });
+        
+        userInput.focus();
+        
+    } catch (error) {
+        console.error('Error opening conversation:', error);
+        alert('Erro ao abrir conversa: ' + error.message);
     }
 }
 
@@ -883,13 +1410,53 @@ function deleteItem(button) {
 }
 
 // Renomeia um item da lista
-function renameItem(button) {
-    const itemNameEl = originalParent.querySelector('.item-name');
+async function renameItem(button) {
+    const recentItem = originalParent;
+    const itemNameEl = recentItem.querySelector('.item-name');
     const currentName = itemNameEl.textContent;
+    const conversationId = recentItem.dataset.sessionId; // Actually stores conversation_id now
+    
     const newName = prompt('Digite o novo nome:', currentName);
-    if (newName && newName.trim() !== '' && newName !== currentName) {
-        itemNameEl.textContent = newName.trim();
+    if (!newName || newName.trim() === '' || newName === currentName) {
+        closeAllMenus();
+        return;
     }
+    
+    try {
+        const response = await fetch('/api/etp-dynamic/rename', {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                title: newName.trim()
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Erro ao renomear conversa');
+        }
+        
+        // Update UI with persisted name
+        itemNameEl.textContent = data.title;
+        
+        // Update current conversation title if it's the active one
+        if (getConversationId() === conversationId) {
+            currentConversation.title = data.title;
+            chatTitle.textContent = data.title;
+        }
+        
+        console.log('[RENAME] Renamed conversation:', conversationId, 'to', data.title);
+        
+    } catch (error) {
+        console.error('Error renaming conversation:', error);
+        alert('Erro ao renomear conversa: ' + error.message);
+    }
+    
     closeAllMenus();
 }
 
@@ -932,6 +1499,7 @@ function logout() {
         // Chama o endpoint de logout do backend
         fetch('/api/auth/logout', {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
             }
@@ -950,5 +1518,52 @@ function logout() {
             // Mesmo em caso de erro, redireciona para login por segurança
             window.location.href = '/login.html';
         });
+    }
+}
+
+// === DOCUMENT GENERATION FEATURES ===
+// Funções para gerar documento ETP e exibir links de download
+
+// REQUIREMENT 2: Removed phase label from UI
+// function updateStageBadge(stage) {
+//     const el = document.getElementById('stage-badge');
+//     if (!el) return;
+//     el.textContent = `Fase: ${stage}`;
+// }
+
+// Alias para adicionar mensagem do assistente
+function appendAssistantMessage(text) {
+    addMessage(text, 'ai');
+}
+
+// Gera documento ETP baseado na sessão atual
+async function generateDocument(sessionId) {
+    try {
+        const res = await fetch('/api/etp-dynamic/generate-document', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ session_id: sessionId })
+        });
+        const data = await res.json();
+        if (data.success === false) { 
+            alert(`Erro: ${data.error}`); 
+            return; 
+        }
+        appendAssistantMessage(data.ai_response || data.message || 'Documento gerado.');
+        if (data.doc_id) {
+            const htmlUrl = `/api/etp-dynamic/document/${data.doc_id}/html`;
+            const docxUrl = `/api/etp-dynamic/document/${data.doc_id}/download-docx`;
+            const panel = document.getElementById('doc-actions');
+            if (panel) {
+                panel.innerHTML = `
+                    <a href="${htmlUrl}" target="_blank">Ver HTML</a> |
+                    <a href="${docxUrl}">Baixar DOCX</a>
+                `;
+            }
+        }
+    } catch (e) { 
+        console.error(e); 
+        alert('Falha ao gerar documento.'); 
     }
 }

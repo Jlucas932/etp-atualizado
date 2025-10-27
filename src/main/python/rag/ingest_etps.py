@@ -588,8 +588,8 @@ class ETPIngestor:
                 with open(mapping_path, 'w') as f:
                     json.dump(chunk_ids, f)
                 
-                # Criar e salvar índice BM25 conforme especificação
-                self._create_bm25_index(chunks)
+                # Nota: Índice BM25 é criado pelo módulo rag.retrieval.build_indices()
+                # Não criar aqui para evitar duplicação de responsabilidade
                 
                 logger.info(f"Índice FAISS criado: {len(embeddings_list)} vetores, dimensão {dimension}")
                 logger.info(f"Salvo em: {index_path}")

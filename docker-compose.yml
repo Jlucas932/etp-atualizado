@@ -7,6 +7,9 @@ services:
       - "5002:5002"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
+      - ETP_TEMP=${ETP_TEMP:-0.7}
+      - ETP_AI_PROVIDER=${ETP_AI_PROVIDER:-fallback}
       - SECRET_KEY=${SECRET_KEY}
       - FLASK_ENV=development
       - FLASK_DEBUG=1

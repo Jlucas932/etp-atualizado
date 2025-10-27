@@ -1,91 +1,77 @@
-// PASSO 1B: Renderização limpa de requisitos (sem JSON cru)
-
-function escapeHtml(text) {
-    if (typeof text !== 'string') {
-        return String(text);
-    }
-    
-    const htmlEscapeMap = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#x27;',
-        '/': '&#x2F;'
+// UMD simples: expõe em window.renderTextSmart (sem ESM)
+(function (global) {
+  function renderTextSmart(containerEl, text, stage) {
+    const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    const badge = s => {
+      const low = s.toLowerCase();
+      if (low.includes("(obrigatório)")) return s.replace(/\(obrigatório\)/ig, '<span class="badge-od badge-obr">(Obrigatório)</span>');
+      if (low.includes("(desejável)"))  return s.replace(/\(desejável\)/ig,  '<span class="badge-od badge-des">(Desejável)</span>');
+      return s;
     };
-    
-    return text.replace(/[&<>"'\/]/g, function(s) {
-        return htmlEscapeMap[s];
-    });
-}
 
-function renderRequirementsList(items) {
-    if (!Array.isArray(items) || items.length === 0) {
-        return document.createTextNode('Nenhum requisito disponível.');
+    const txt = (text || "").replace(/\r\n/g, "\n");
+    const lines = txt.split("\n");
+
+    const hasNumbered = lines.some(l => /^\s*\d+\.\s+/.test(l));
+    const hasBullets  = lines.some(l => /^\s*[•\-]\s+/.test(l));
+
+    containerEl.innerHTML = "";
+    if (stage === 'solution_strategies' && lines.some(l => /^\s*•\s+/.test(l))) {
+      // cards simples por estratégia
+      let block = document.createElement('div');
+      block.className = "formatted";
+      let curr = null;
+      lines.forEach(l => {
+        if (/^\s*•\s+/.test(l)) {
+          curr && block.appendChild(curr);
+          curr = document.createElement('div');
+          curr.style.marginBottom = "10px";
+          const title = document.createElement('div');
+          title.style.fontWeight = "600";
+          title.textContent = l.replace(/^\s*•\s+/, "");
+          curr.appendChild(title);
+        } else if (curr) {
+          const p = document.createElement('div');
+          p.textContent = l.trim();
+          curr.appendChild(p);
+        }
+      });
+      curr && block.appendChild(curr);
+      containerEl.appendChild(block);
+      return;
     }
-    
-    const ul = document.createElement('ul');
-    ul.className = 'requirements-list';
-    
-    items.forEach((item) => {
+
+    if (hasNumbered) {
+      const ol = document.createElement('ol');
+      lines.forEach(l => {
+        if (/^\s*\d+\.\s+/.test(l)) {
+          const li = document.createElement('li');
+          li.innerHTML = badge(esc(l.replace(/^\s*\d+\.\s+/, "")));
+          ol.appendChild(li);
+        } else {
+          const last = ol.lastElementChild;
+          if (last && l.trim()) last.innerHTML += "<br>" + badge(esc(l));
+        }
+      });
+      containerEl.appendChild(ol);
+      return;
+    }
+
+    if (hasBullets) {
+      const ul = document.createElement('ul');
+      lines.forEach(l => {
         const li = document.createElement('li');
-        li.className = 'requirement-item';
-
-        const text = item.text || item.requirement || 'Texto não disponível';
-        const showJustificativa = Boolean(item.showJustificativa && item.justification);
-
-        let innerHtml = `<span>${escapeHtml(text)}</span>`;
-        if (showJustificativa) {
-            innerHtml += `<br><em>Justificativa:</em> ${escapeHtml(item.justification)}`;
-        }
-
-        li.innerHTML = innerHtml;
+        li.innerHTML = badge(esc(l.replace(/^\s*[•\-]\s+/, "")));
         ul.appendChild(li);
-    });
-    
-    return ul;
-}
-
-function renderAssistantMessage(data) {
-    // PASSO 1B: Renderização baseada no campo 'kind'
-    if (data.kind && data.kind.startsWith('requirements_')) {
-        const container = document.createElement('div');
-        container.className = 'requirements-response';
-        
-        if (data.necessity) {
-            const necessityDiv = document.createElement('div');
-            necessityDiv.className = 'necessity-section';
-            necessityDiv.innerHTML = `<strong>Necessidade:</strong> ${escapeHtml(data.necessity)}`;
-            container.appendChild(necessityDiv);
-        }
-        
-        if (data.requirements && data.requirements.length > 0) {
-            const requirementsDiv = document.createElement('div');
-            requirementsDiv.className = 'requirements-section';
-            
-            const title = document.createElement('h4');
-            title.textContent = data.kind === 'requirements_suggestion' ? 'Requisitos Sugeridos:' : 'Requisitos Atualizados:';
-            requirementsDiv.appendChild(title);
-            
-            const requirementsList = renderRequirementsList(data.requirements);
-            requirementsDiv.appendChild(requirementsList);
-            
-            container.appendChild(requirementsDiv);
-        }
-        
-        if (data.message) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'ai-message';
-            messageDiv.textContent = data.message;
-            container.appendChild(messageDiv);
-        }
-        
-        return container;
+      });
+      containerEl.appendChild(ul);
+      return;
     }
-    
-    // Renderização padrão para mensagens de texto
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'ai-message';
-    messageDiv.textContent = data.message || data.ai_response || 'Resposta não disponível';
-    return messageDiv;
-}
+
+    const pre = document.createElement('pre');
+    pre.className = "formatted";
+    pre.textContent = txt;
+    containerEl.appendChild(pre);
+  }
+  global.renderTextSmart = renderTextSmart;
+})(window);

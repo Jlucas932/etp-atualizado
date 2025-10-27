@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ doc.title }}</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; line-height: 1.4; margin: 24px; }
+    h1 { font-size: 20px; margin-bottom: 12px; }
+    h2 { font-size: 16px; margin-top: 18px; }
+    ul { margin-top: 8px; }
+    .meta { font-size: 12px; color: #555; }
+    .section { margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <h1>{{ doc.title }}</h1>
+  <div class="meta">Sessão: {{ doc.session_id }}</div>
+
+  {% for s in doc.sections %}
+    <div class="section" id="{{ s.id }}">
+      <h2>{{ s.title }}</h2>
+      {% if s.content %}<p>{{ s.content }}</p>{% endif %}
+      {% if s.get('items') %}
+        <ul>
+          {% for it in s.get('items', []) %}
+            <li>{{ it }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if s.details %}<p><strong>Detalhes:</strong> {{ s.details }}</p>{% endif %}
+      {% if s.method %}<p><strong>Método:</strong> {{ s.method }}</p>{% endif %}
+      {% if s.supplier_count is not none %}<p><strong>Fornecedores consultados:</strong> {{ s.supplier_count }}</p>{% endif %}
+      {% if s.get('evidence_links') %}
+        <p><strong>Evidências:</strong></p>
+        <ul>
+          {% for link in s.get('evidence_links', []) %}
+            <li><a href="{{ link }}" target="_blank">{{ link }}</a></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if s.get('notes') %}
+        <p><strong>Observações:</strong></p>
+        <ul>
+          {% for note in s.get('notes', []) %}
+            <li>{{ note }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+  {% endfor %}
+</body>
+</html>

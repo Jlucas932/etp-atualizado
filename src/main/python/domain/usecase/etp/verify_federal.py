@@ -242,8 +242,9 @@ def summarize_for_user(entry: Dict[str, Any], openai_client=None) -> str:
         """
         
         # Chamar OpenAI
+        logger.info("[LM] model=gpt-4.1 temp=0.3 stage=legal_norm_summary")
         response = openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4.1",
             messages=[
                 {"role": "system", "content": "Você é um assistente especializado em explicar informações legais de forma simples e clara."},
                 {"role": "user", "content": prompt}

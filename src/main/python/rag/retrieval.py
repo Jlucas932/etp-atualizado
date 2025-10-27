@@ -505,3 +505,94 @@ def search_legal(objective_slug: str, query: str, k: int = 8) -> List[Dict]:
     """Função de conveniência para busca de normas legais"""
     retrieval = get_retrieval_instance()
     return retrieval.search_legal(objective_slug, query, k)
+
+def retrieve_for_stage(necessity: str, stage: str, k: int = 12) -> List[Dict]:
+    """
+    Retrieve chunks from RAG based on stage, prioritizing relevant sections with strict rules.
+    
+    Rules:
+    - suggest_requirements: ONLY 'requisito' index
+    - solution_strategies: prioritize 'requisito' and 'necessidade'; exclude chunks whose headings contain "Justificativa" or "Objetivo"
+    - pca, legal_norms, qty_value, installment: DO NOT use RAG (return empty list)
+    
+    Args:
+        necessity: User's necessity description
+        stage: Current stage in the flow
+        k: Number of chunks to retrieve
+        
+    Returns:
+        List of chunks with id, section, text, and score
+    """
+    retrieval = get_retrieval_instance()
+    
+    # Normalize stage aliases
+    if stage == 'quantity_value':
+        stage = 'qty_value'
+    if stage == 'parceling':
+        stage = 'installment'
+    
+    # Disable RAG for certain stages
+    if stage in {'pca', 'legal_norms', 'qty_value', 'installment'}:
+        logger.info(f"[RAG:DISABLED stage={stage}] Returning no context")
+        return []
+    
+    results = []
+    
+    if stage == 'suggest_requirements':
+        try:
+            results = retrieval._hybrid_search(
+                section_type='requisito',
+                objective_slug='',
+                query=necessity,
+                k=k
+            )
+        except Exception as e:
+            logger.error(f"Error searching requisitos: {e}")
+    elif stage in {'solution_path', 'solution_strategies'}:
+        # Prioritize 'requisito' and 'necessidade' sections
+        priority_sections = ['requisito', 'necessidade']
+        for section in priority_sections:
+            try:
+                section_results = retrieval._hybrid_search(
+                    section_type=section,
+                    objective_slug='',
+                    query=necessity,
+                    k=max(k // len(priority_sections), 3)
+                )
+                results.extend(section_results)
+            except Exception as e:
+                logger.warning(f"Error searching section {section}: {e}")
+        # Exclude chunks with blocked headings
+        filtered = []
+        for r in results:
+            heading = str(r.get('section_title') or '') + ' ' + str(r.get('content') or '')[:120]
+            if re.search(r"(?i)\bjustificativa\b|\bobjetivo\b", heading):
+                continue
+            filtered.append(r)
+        results = filtered
+    else:
+        # Default: conservative search in requisitos only
+        try:
+            results = retrieval._hybrid_search(
+                section_type='requisito',
+                objective_slug='',
+                query=necessity,
+                k=k
+            )
+        except Exception as e:
+            logger.error(f"Error in default search: {e}")
+    
+    # Sort by hybrid score and return top k
+    results.sort(key=lambda x: x.get('hybrid_score', 0), reverse=True)
+    
+    # Format results for generator
+    formatted_results = []
+    for r in results[:k]:
+        formatted_results.append({
+            'id': r.get('chunk_id'),
+            'section': r.get('section_type'),
+            'text': r.get('content'),
+            'score': r.get('hybrid_score', 0)
+        })
+    
+    return formatted_results

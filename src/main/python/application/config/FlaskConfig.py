@@ -39,7 +39,7 @@ def get_config_values():
         'rate_limit_per_minute': int(os.getenv('RATE_LIMIT_PER_MINUTE', '30')),
     }
 
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, request, g, current_app
 from flask_cors import CORS
 from application.config.LimiterConfig import limiter
 from domain.interfaces.dataprovider.DatabaseConfig import init_database, db
@@ -119,6 +119,11 @@ def create_api():
     print(f"📁 Pasta templates configurada: {template_path}")
     print(f"📄 Verificando index.html: {os.path.exists(os.path.join(static_path, 'index.html'))}")
     
+    # Criar diretório de prévias se não existir
+    STATIC_PREVIEWS_DIR = os.path.join(static_path, 'previews')
+    os.makedirs(STATIC_PREVIEWS_DIR, exist_ok=True)
+    print(f"📁 Pasta de prévias configurada: {STATIC_PREVIEWS_DIR}")
+    
     # Inicialização do app Flask
     app = Flask(__name__, static_folder=static_path, template_folder=template_path)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'asdf#FGSgvasgf$5$WGT')
@@ -135,6 +140,35 @@ def create_api():
     
     # Inicializar rate limiting
     limiter.init_app(app)
+    
+    # Exempt static routes from rate limiting
+    @app.before_request
+    def _exempt_static_from_limiter():
+        """Exempt static file routes from rate limiting to avoid 429 errors"""
+        # Só GET; nada de POST/PUT etc.
+        if request.method != 'GET':
+            return
+        path = request.path or '/'
+        static_like = (
+            path.startswith('/static')
+            or path.startswith('/fonts')
+            or path in (
+                '/styles.css',
+                '/script.js',
+                '/requirements_renderer.js',
+                '/favicon.ico',
+                '/favicon_etp.ico',
+                '/login.html',
+            )
+        )
+        if static_like:
+            g._rate_limiting_exempt = True
+    
+    @limiter.request_filter
+    def _skip_if_flagged():
+        """Filter to check if request should be exempt from rate limiting"""
+        # Se a flag foi setada no before_request, o limiter ignora
+        return bool(getattr(g, '_rate_limiting_exempt', False))
     
     # Importar blueprints só depois das extensões serem inicializadas
     from adapter.entrypoint.etp.EtpController import etp_bp
@@ -154,9 +188,25 @@ def create_api():
     app.register_blueprint(kb_blueprint)  # KB blueprint already has url_prefix='/api/kb' defined
     app.register_blueprint(admin_bp)  # Admin blueprint already has url_prefix='/administracao' defined
     
+    # Rotas de favicon dedicadas (e isentas)
+    @app.route('/favicon.ico')
+    @limiter.exempt
+    def favicon():
+        return send_from_directory(
+            current_app.static_folder, 'favicon.ico', mimetype='image/x-icon'
+        )
+    
+    @app.route('/favicon_etp.ico')
+    @limiter.exempt
+    def favicon_etp():
+        return send_from_directory(
+            current_app.static_folder, 'favicon_etp.ico', mimetype='image/x-icon'
+        )
+    
     # Servir arquivos estáticos
     @app.route('/', defaults={'path': ''})
     @app.route('/<path:path>')
+    @limiter.exempt
     def serve(path):
         static_folder_path = app.static_folder
         

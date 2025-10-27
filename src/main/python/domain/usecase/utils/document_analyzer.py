@@ -279,10 +279,11 @@ class AdvancedDocumentAnalyzer:
             
             # Fazer chamada à API de forma compatível
             try:
+                logger.info("[LM] model=gpt-4.1 temp=0.1 stage=document_analysis")
                 if self.client:
                     # Usar cliente moderno
                     response = self.client.chat.completions.create(
-                        model="gpt-4-turbo",  # Modelo mais poderoso para análise de documentos
+                        model="gpt-4.1",
                         messages=[
                             {
                                 "role": "system",
@@ -299,7 +300,7 @@ class AdvancedDocumentAnalyzer:
                 else:
                     # Usar API legacy
                     response = openai.ChatCompletion.create(
-                        model="gpt-4-turbo",
+                        model="gpt-4.1",
                         messages=[
                             {
                                 "role": "system",
@@ -487,9 +488,10 @@ class AdvancedDocumentAnalyzer:
             
             # Fazer chamada à API
             try:
+                logger.info("[LM] model=gpt-4.1 temp=0.1 stage=etp_answers_extraction")
                 if self.client:
                     response = self.client.chat.completions.create(
-                        model="gpt-4-turbo",
+                        model="gpt-4.1",
                         messages=[
                             {
                                 "role": "system",
@@ -505,7 +507,7 @@ class AdvancedDocumentAnalyzer:
                     )
                 else:
                     response = openai.ChatCompletion.create(
-                        model="gpt-4-turbo",
+                        model="gpt-4.1",
                         messages=[
                             {
                                 "role": "system",
