@@ -107,17 +107,25 @@ async function checkAuthentication() {
 
 // INTEGRAÇÃO: Atualiza as informações do usuário na interface
 function updateUserInfo(user) {
-    // Atualiza nome do usuário
-    const userNameElement = document.querySelector('.user-name');
-    if (userNameElement && user.username) {
-        userNameElement.textContent = user.username;
+    if (!user) return;
+
+    const displayName = user.full_name || user.username || 'Demo';
+    const initials = (displayName || 'U')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part[0])
+        .join('')
+        .substring(0, 2)
+        .toUpperCase() || 'D';
+
+    const nameElement = document.getElementById('currentUserName') || document.querySelector('.user-name');
+    if (nameElement) {
+        nameElement.textContent = displayName;
     }
-    
-    // Atualiza avatar com iniciais do nome
-    const userAvatarElement = document.querySelector('.user-avatar');
-    if (userAvatarElement && user.username) {
-        const avatarText = user.username.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-        userAvatarElement.textContent = avatarText;
+
+    const avatarElement = document.getElementById('currentUserInitials') || document.querySelector('.user-avatar');
+    if (avatarElement) {
+        avatarElement.textContent = initials;
     }
 }
 
@@ -134,20 +142,32 @@ function setupEventListeners() {
     });
 
     // Eventos da Sidebar
-    document.getElementById('newDocBtn').addEventListener('click', () => startNewConversation('document', 'Novo Documento'));
-    document.getElementById('newConversationBtn').addEventListener('click', () => startNewConversation('chat', 'Nova Conversa'));
-    
+    const newDocBtn = document.getElementById('newDocBtn');
+    if (newDocBtn) {
+        newDocBtn.addEventListener('click', () => startNewConversation('document', 'Novo Documento'));
+    }
+    const newConversationBtn = document.getElementById('newConversationBtn');
+    if (newConversationBtn) {
+        newConversationBtn.addEventListener('click', () => startNewConversation('chat', 'Nova Conversa'));
+    }
+
     // Eventos do Chat
-    sendBtn.addEventListener('click', handleSendMessage);
-    userInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            handleSendMessage();
-        }
-    });
+    if (sendBtn) {
+        sendBtn.addEventListener('click', handleSendMessage);
+    }
+    if (userInput) {
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+        });
+    }
 
     // Eventos da Pesquisa
-    searchInput.addEventListener('input', () => renderSearchResults(searchInput.value));
+    if (searchInput) {
+        searchInput.addEventListener('input', () => renderSearchResults(searchInput.value));
+    }
     
     // Atalhos de teclado globais
     document.addEventListener('keydown', function(event) {
@@ -712,26 +732,22 @@ function addMessage(content, sender, responseData = null) {
     // Se é resposta estruturada do backend, renderizar apropriadamente
     if (sender === 'ai' && responseData && responseData.kind) {
         bubble.innerHTML = renderStructuredResponse(responseData);
-    }
-    // Parse Markdown content if it's from AI and contains Markdown syntax
-    else if (sender === 'ai' && typeof marked !== 'undefined' && 
-        (content.includes('**') || content.includes('*') || content.includes('- ') || 
-         content.includes('# ') || content.includes('\n'))) {
-        // Configure marked for better formatting
-        marked.setOptions({
-            breaks: true, // Convert \n to <br>
-            gfm: true // GitHub Flavored Markdown
-        });
-        // Sanitizar conteúdo antes do parsing
-        const sanitizedContent = sanitizeJsonInText(content);
-        bubble.innerHTML = marked.parse(sanitizedContent);
-        
-        // After rendering, detect and enhance etp-preview code blocks
-        enhanceEtpPreviewBlocks(bubble);
+    } else if (sender === 'ai') {
+        const sanitizedContent = sanitizeJsonInText(content || '');
+        if (typeof marked !== 'undefined') {
+            try {
+                marked.setOptions({ breaks: true, gfm: true });
+                bubble.innerHTML = marked.parse(sanitizedContent || '');
+                enhanceEtpPreviewBlocks(bubble);
+            } catch (err) {
+                console.warn('[MARKDOWN] Falha ao renderizar markdown:', err);
+                bubble.textContent = sanitizedContent || '';
+            }
+        } else {
+            bubble.textContent = sanitizedContent || '';
+        }
     } else {
-        // Sanitizar conteúdo básico
-        const sanitizedContent = sanitizeJsonInText(content);
-        bubble.innerHTML = sanitizedContent;
+        bubble.textContent = content || '';
     }
     
     messageWrapper.appendChild(bubble);

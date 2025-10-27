@@ -371,7 +371,7 @@ def ask_user_decision(session, prompt_text: str, proposal_text: str, stage: str)
         prompt_text + "\n\n"
         "**Opções:**\n"
         "1) **Aceitar** a sugestão inicial acima e seguir.\n"
-        "2) **Registrar como Pendente** (com a justificativa proposta) e seguir.\n"
+        "2) **Registrar como Pendente** (anotamos os detalhes sugeridos) e seguir.\n"
         "3) **Quero debater mais** (ficamos neste ponto e ajustamos juntos)."
     )
 
@@ -1172,30 +1172,56 @@ def chat_stage_based():
                 'necessity': necessity
             }
             
-            # Call generate_answer for collect_need stage
-            result = generate_answer('collect_need', [], user_message, rag_context)
-            
-            # Extract response components
-            # NOTE: For suggest_requirements stage, only use requirements (no intro, no justification)
-            requirements = result.get('requirements', [])
-            
+            # Call generate_answer for suggest_requirements stage
+            result = generate_answer('suggest_requirements', [], user_message, rag_context)
+
+            intro = (result.get('intro') or '').strip()
+            requirements = result.get('requirements', []) or []
+
+            def _normalize_req(item):
+                if isinstance(item, dict):
+                    text = (item.get('text') or item.get('descricao') or '').strip()
+                    req_type = (item.get('type') or item.get('tipo') or '').strip()
+                else:
+                    text = str(item or '').strip()
+                    req_type = ''
+                if not text:
+                    return None
+                return {
+                    'text': text,
+                    'type': req_type.title() if req_type else ''
+                }
+
+            requirements = [req for req in (_normalize_req(r) for r in requirements) if req]
+
             # Deduplicate requirements before storing
             requirements = dedupe_requirements(requirements)
-            
+
             # Store requirements
             session.set_requirements(requirements)
-            
+
             # Persist stage output to EtpParts
+            formatted_text = []
+            for idx, req in enumerate(requirements, start=1):
+                prefix = f"{idx}. "
+                if req.get('type'):
+                    prefix += f"({req['type']}) "
+                formatted_text.append(f"{prefix}{req.get('text', '')}")
+
             persist_stage_output(conversation_id, 'suggest_requirements', {
-                'data': {'requirements': requirements},
-                'text': "\n".join(requirements) if requirements else ""
+                'data': {'requirements': requirements, 'intro': intro},
+                'text': "\n".join(formatted_text) if formatted_text else ""
             })
-            
-            # Build response - ONLY requirements list for suggest_requirements stage
-            if requirements:
-                ai_response = "\n".join(requirements)
+
+            # Build response - intro + requirements list for suggest_requirements stage
+            if formatted_text:
+                response_parts = []
+                if intro:
+                    response_parts.append(intro)
+                response_parts.append("\n".join(formatted_text))
+                ai_response = "\n\n".join([part for part in response_parts if part])
             else:
-                ai_response = ""
+                ai_response = intro
             
             # Store in generator_output for compatibility
             generator_output = result
@@ -1354,118 +1380,88 @@ def chat_stage_based():
                 next_stage = 'refine_requirements_assist'
         
         elif current_stage == 'solution_strategies':
-            # Generate contracting strategies (not ETP steps)
+            # Generate 2-3 strategies with pros/cons and advance to PCA
             from rag.retrieval import retrieve_for_stage
-            
-            # Check if we already have strategies stored
-            stored_strategies = answers.get('strategies', [])
-            selected_strategies = answers.get('selected_strategies', [])
-            
-            # If strategies already exist, try to parse selection
-            if stored_strategies:
-                logger.info(f"[STRATEGY] Already have {len(stored_strategies)} strategies, checking for selection")
-                
-                # Check for vague acknowledgment first
-                if intents.is_vague_ack(user_message):
-                    logger.info(f"[STRATEGY] Vague acknowledgment detected, staying at stage: {user_message[:30]}")
-                    ai_response = "Qual dessas estratégias faz mais sentido para o seu caso? Pode me dizer o número ou o nome da que preferir."
-                    next_stage = 'solution_strategies'
+            from application.ai.generator import generate_answer
+
+            context = retrieve_for_stage(necessity, 'solution_strategies', k=8)
+
+            history = []
+            try:
+                messages = MessageRepo.list_for_conversation(conversation_id) or []
+            except Exception:
+                messages = []
+            for msg in messages[-10:]:
+                history.append({'role': msg.role, 'content': msg.content})
+
+            req_strings = []
+            for req in requirements:
+                if isinstance(req, dict):
+                    req_strings.append(req.get('text') or req.get('descricao') or str(req))
                 else:
-                    # Extract strategy titles for selection matching
-                    strategy_titles = [s.get('titulo', '') for s in stored_strategies]
-                    
-                    # Try to parse user selection using new helper
-                    sel_idx = _strategy_selection(user_message, strategy_titles)
-                    
-                    if sel_idx is not None:
-                        # User selected a strategy - save and advance
-                        selected_strategy = stored_strategies[sel_idx]
-                        answers['selected_strategies'] = [selected_strategy]
-                        answers['strategy_selected'] = sel_idx
-                        session.set_answers(answers)
-                        db.session.commit()
-                        
-                        selected_title = selected_strategy.get('titulo', 'Estratégia')
-                        ai_response = f"Perfeito. Seguiremos com: {selected_title}. Agora vamos tratar do PCA (Plano de Contratações Anual)."
-                        next_stage = 'pca'
-                        logger.info(f"[STRATEGY] Selection detected (index={sel_idx}), advancing to {next_stage}")
-                    else:
-                        # No valid selection detected
-                        # Do NOT advance on free confirmation - stay in stage
-                        ai_response = "Não consegui identificar qual estratégia você escolheu. Pode me indicar qual prefere? Use o número ou o nome dela."
-                        next_stage = 'solution_strategies'
-                        logger.info(f"[STRATEGY] No valid selection, staying in stage")
-            else:
-                # First time in this stage - generate strategies
-                context = retrieve_for_stage(necessity, 'solution_strategies', k=8)
-                
-                # Build history
-                history = []
-                try:
-                    messages = MessageRepo.list_for_conversation(conversation_id) or []
-                except Exception:
-                    messages = []
-                for msg in messages[-10:]:
-                    history.append({'role': msg.role, 'content': msg.content})
-                
-                # Call new generate_answer for solution_strategies
-                from application.ai.generator import generate_answer
-                
-                # Format requirements as simple strings
-                req_strings = []
-                for req in requirements:
-                    if isinstance(req, dict):
-                        req_strings.append(req.get('text') or req.get('descricao') or str(req))
-                    else:
-                        req_strings.append(str(req))
-                
-                rag_context = {
-                    'chunks': context,
-                    'necessity': necessity,
-                    'requirements': req_strings
+                    req_strings.append(str(req))
+
+            rag_context = {
+                'chunks': context,
+                'necessity': necessity,
+                'requirements': req_strings
+            }
+
+            result = generate_answer('solution_strategies', history, user_message, rag_context)
+            strategies = result.get('strategies', []) or []
+
+            def _normalize_strategy(item):
+                if not isinstance(item, dict):
+                    return None
+                name = (item.get('name') or item.get('titulo') or '').strip()
+                pros = item.get('pros') or item.get('vantagens') or []
+                cons = item.get('cons') or item.get('riscos') or []
+                if isinstance(pros, str):
+                    pros = [p.strip() for p in pros.split('\n') if p.strip()]
+                if isinstance(cons, str):
+                    cons = [c.strip() for c in cons.split('\n') if c.strip()]
+                if not name:
+                    return None
+                return {
+                    'name': name,
+                    'titulo': name,
+                    'pros': pros,
+                    'cons': cons,
+                    'vantagens': pros,
+                    'riscos': cons
                 }
-                
-                result = generate_answer('solution_strategies', history, user_message, rag_context)
-                
-                # Extract strategies
-                strategies = result.get('strategies', [])
-                intro = result.get('intro', '')
-                
-                # Format strategies for display
-                if strategies:
-                    strat_lines = []
-                    for i, strat in enumerate(strategies, 1):
-                        titulo = strat.get('titulo', f'Estratégia {i}')
-                        quando = strat.get('quando_indicado', '')
-                        vantagens = strat.get('vantagens', [])
-                        riscos = strat.get('riscos', [])
-                        
-                        strat_text = f"\n**{i}. {titulo}**"
-                        if quando:
-                            strat_text += f"\n   Quando indicado: {quando}"
-                        if vantagens:
-                            strat_text += f"\n   Vantagens: {', '.join(vantagens)}"
-                        if riscos:
-                            strat_text += f"\n   Riscos/Cuidados: {', '.join(riscos)}"
-                        
-                        strat_lines.append(strat_text)
-                    
-                    strat_text_full = "\n".join(strat_lines)
-                    if intro:
-                        ai_response = f"{intro}\n{strat_text_full}"
-                    else:
-                        ai_response = strat_text_full
-                else:
-                    ai_response = intro if intro else "Estratégias de contratação geradas."
-                
-                # Save strategies to session for next interaction
-                answers['strategies'] = strategies
-                session.set_answers(answers)
-                db.session.commit()
-                
-                # Stay in same stage to wait for selection
-                next_stage = 'solution_strategies'
-                logger.info(f"[STRATEGY] Generated {len(strategies)} strategies, waiting for selection")
+
+            normalized_strategies = [s for s in (_normalize_strategy(st) for st in strategies) if s]
+            if len(normalized_strategies) < 2:
+                logger.warning(f"[STRATEGY] Insufficient strategies ({len(normalized_strategies)}). Using fallback list.")
+                from application.ai.generator import _fallback_strategies  # type: ignore
+                normalized_strategies = _fallback_strategies(necessity)[:3]
+
+            # Limit to 3 strategies max
+            normalized_strategies = normalized_strategies[:3]
+
+            answers['strategies'] = normalized_strategies
+            if normalized_strategies:
+                answers['selected_strategies'] = [normalized_strategies[0]]
+                answers['strategy_selected'] = 0
+            session.set_answers(answers)
+            db.session.commit()
+
+            blocks = []
+            for idx, strat in enumerate(normalized_strategies, start=1):
+                name = strat.get('name', f'Estratégia {idx}')
+                pros = strat.get('pros') or []
+                cons = strat.get('cons') or []
+                block_lines = [f"**{idx}. {name}**"]
+                if pros:
+                    block_lines.append("- Prós: " + "; ".join(pros))
+                if cons:
+                    block_lines.append("- Contras: " + "; ".join(cons))
+                blocks.append("\n".join(block_lines))
+
+            ai_response = "Estratégias possíveis para atender à necessidade:\n\n" + "\n\n".join(blocks)
+            next_stage = 'pca'
+            logger.info(f"[STRATEGY] Listando {len(normalized_strategies)} estratégias e avançando para {next_stage}")
         
         elif current_stage == 'pca':
             # First, try to consume pending decision
@@ -1482,10 +1478,10 @@ def chat_stage_based():
                     next_stage = 'legal_norms'
                     ai_response = "Perfeito. Agora sobre normas e base legal: posso te sugerir um pacote inicial típico do setor e você me diz se mantemos, ajustamos ou deixamos como rascunho?"
                 elif decision["action"] == "pendente":
-                    answers['pca'] = f'Pendente (com justificativa): {decision["text"]}'
+                    answers['pca'] = f'Pendente (detalhes registrados): {decision["text"]}'
                     session.set_answers(answers)
                     next_stage = 'legal_norms'
-                    ai_response = "Ok, registrado como Pendente (com justificativa). Agora sobre normas e base legal: posso te sugerir um pacote inicial típico do setor e você me diz se mantemos, ajustamos ou deixamos como rascunho?"
+                    ai_response = "Ok, registrei como Pendente com os detalhes informados. Agora sobre normas e base legal: posso te sugerir um pacote inicial típico do setor e você me diz se mantemos, ajustamos ou deixamos como rascunho?"
                 elif decision["action"] == "debate":
                     next_stage = current_stage  # Stay in same stage
                     ai_response = "Vamos debater o PCA. A necessidade é emergente (inclusão extraordinária) ou pode aguardar o próximo ciclo anual?"
@@ -1553,10 +1549,10 @@ Posso sugerir **inclusão extraordinária** como padrão. Preferir **aceitar**, 
                     next_stage = 'qty_value'
                     ai_response = "Perfeito, sigo com as normas sugeridas. Vamos estimar quantitativo/valor..."
                 elif decision["action"] == "pendente":
-                    answers['legal_norms'] = f'Pendente (com justificativa): {decision["text"]}'
+                    answers['legal_norms'] = f'Pendente (detalhes registrados): {decision["text"]}'
                     session.set_answers(answers)
                     next_stage = 'qty_value'
-                    ai_response = "Registro feito como Pendente (com justificativa). Vamos estimar quantitativo/valor..."
+                    ai_response = "Registro feito como Pendente com os detalhes informados. Vamos estimar quantitativo/valor..."
                 elif decision["action"] == "debate":
                     next_stage = current_stage  # Stay in same stage
                     ai_response = "Sem problemas — seguimos debatendo as normas. Quer iniciar por base legal federal (Lei 14.133/2021 + Decreto 11.462/2023) e regulatório setorial?"
@@ -1600,7 +1596,7 @@ Motivo técnico: asseguram conformidade licitatória e regulatória mínima."""
 **De referência/setoriais para seu caso:**
 {sector_text}
 
-Podemos **aceitar** essa sugestão, **marcar como Pendente** (com justificativa), ou **debater** mais."""
+Podemos **aceitar** essa sugestão, **marcar como Pendente** (registrando como rascunho), ou **debater** mais."""
                     
                     ai_response = ask_user_decision(session, prompt_text, proposal_text, 'legal_norms')
                     next_stage = current_stage  # Don't advance yet
@@ -1666,10 +1662,10 @@ Podemos **aceitar** essa sugestão, **marcar como Pendente** (com justificativa)
                     next_stage = 'installment'
                     ai_response = "Certo, adotei a estimativa inicial. Vamos falar de parcelamento…"
                 elif decision["action"] == "pendente":
-                    answers['qty_value'] = f'Pendente (com justificativa): {decision["text"]}'
+                    answers['qty_value'] = f'Pendente (detalhes registrados): {decision["text"]}'
                     session.set_answers(answers)
                     next_stage = 'installment'
-                    ai_response = "Ok, registrei como Pendente (com justificativa). Agora, parcelamento…"
+                    ai_response = "Ok, registrei como Pendente com os detalhes informados. Agora, parcelamento…"
                 elif decision["action"] == "debate":
                     next_stage = current_stage  # Stay in same stage
                     ai_response = "Vamos afinar a estimativa. Prefere estimar por **faixa de preço** por unidade/serviço ou por **benchmark** de contratos similares?"
@@ -1770,7 +1766,7 @@ Parcelamento: {answers.get('installment', 'não informado')}
 
 Confirme para gerar a prévia do documento."""
                 elif decision["action"] == "pendente":
-                    answers['installment'] = f'Pendente (com justificativa): {decision["text"]}'
+                    answers['installment'] = f'Pendente (detalhes registrados): {decision["text"]}'
                     session.set_answers(answers)
                     next_stage = 'summary'
                     # Generate compact summary
@@ -3474,7 +3470,7 @@ def chat_stream():
                     'necessity': user_message
                 }
                 
-                result = generate_answer('collect_need', [], user_message, rag_context)
+                result = generate_answer('suggest_requirements', [], user_message, rag_context)
                 
                 # Extract and store requirements (no justification in chat)
                 intro = (result.get('intro') or '').strip()
@@ -3484,7 +3480,10 @@ def chat_stream():
                 def _has_question_like(items):
                     qtriggers = ("qual", "quais", "existe", "há ", "ha ", "como", "quando", "onde", "por que", "porque", "por quê", "?")
                     for it in items or []:
-                        s = it if isinstance(it, str) else str(it)
+                        if isinstance(it, dict):
+                            s = it.get('text') or ''
+                        else:
+                            s = it if isinstance(it, str) else str(it)
                         s_low = s.lower()
                         if "?" in s_low or any(s_low.strip().startswith(x) for x in qtriggers):
                             return True
@@ -3496,9 +3495,30 @@ def chat_stream():
                     context_chunks = retrieve_for_stage(user_message, 'suggest_requirements', k=12)
                     rag_context_retry = {'chunks': context_chunks, 'necessity': user_message, 'strict_mode': True, 'no_questions': True}
                     logger.warning("[FLOW GUARD] Detecção de perguntas na lista. Regerando requisitos em modo estrito.")
-                    result = generate_answer('collect_need', [], user_message, rag_context_retry)
+                    result = generate_answer('suggest_requirements', [], user_message, rag_context_retry)
                     intro = (result.get('intro') or '').strip()
-                    requirements = result.get('requirements', []) or []
+                requirements = result.get('requirements', []) or []
+
+                def _normalize_requirement(item):
+                    if isinstance(item, dict):
+                        text = (item.get('text') or item.get('descricao') or item.get('requirement') or '').strip()
+                        req_type = (item.get('type') or item.get('tipo') or '').strip()
+                    else:
+                        text = str(item or '').strip()
+                        req_type = ''
+                    if not text:
+                        return None
+                    # Try to extract type markers embedded in text
+                    type_match = re.match(r'^\s*\d+[\.)]\s*\((Obrigatório|Desejável)\)\s*(.+)$', text, re.IGNORECASE)
+                    if type_match and not req_type:
+                        req_type = type_match.group(1).title()
+                        text = type_match.group(2).strip()
+                    return {
+                        'text': text,
+                        'type': req_type.title() if req_type else ''
+                    }
+
+                requirements = [item for item in (_normalize_requirement(req) for req in requirements) if item]
                 
                 # Fallback intro if empty (ALWAYS provide technical note)
                 if not intro:
@@ -3511,7 +3531,19 @@ def chat_stream():
                 session.set_requirements(requirements)
                 
                 # Build response: intro + requirements list (NO justification in chat)
-                req_text = "\n".join([r if isinstance(r, str) else r.get('text','') for r in requirements])
+                lines = []
+                for idx, req in enumerate(requirements, start=1):
+                    text = req.get('text', '').strip()
+                    req_type = req.get('type', '').strip()
+                    prefix = f"{idx}. "
+                    if req_type:
+                        prefix += f"({req_type}) "
+                    if text and text[0].isdigit() and '.' in text[:4]:
+                        # Avoid double numbering when model already provided it
+                        lines.append(text)
+                    else:
+                        lines.append(f"{prefix}{text}")
+                req_text = "\n".join(lines)
                 ai_response = f"{intro}\n\n{req_text}".strip()
                 
                 # Stream tokens preserving spaces, then apply final sanitization
@@ -3968,7 +4000,7 @@ def etp_conversation():
                     # Approved - advance to pca
                     chosen = ans['solution_path_tentative']
                     ans['solution_path'] = chosen
-                    ans['solution_justification'] = f"Opção escolhida: {chosen}. Justificativa baseada na análise e aderência à necessidade."
+                    ans['solution_justification'] = f"Decisão tomada com base na análise e aderência da alternativa '{chosen}' à necessidade."
                     session.set_answers(ans)
                     session.conversation_stage = 'pca'
                     session.updated_at = datetime.utcnow()
@@ -4032,7 +4064,7 @@ def etp_conversation():
 - Objetivos e metas institucionais
 - Funções de despesa
 - Vínculo com PPA/LDO
-- Justificativa das contratações planejadas
+- Motivos das contratações planejadas
 
 Se não tiver um PCA pronto, posso montar um rascunho básico para você. Quer que eu faça isso?"""
                 return jsonify({**resp_base, 'message': explanation, 'conversation_stage': 'pca'})
@@ -4057,7 +4089,7 @@ Se não tiver um PCA pronto, posso montar um rascunho básico para você. Quer q
 - Alinhar com programa/ação do Plano Plurianual
 - Confirmar previsão orçamentária na LDO
 
-**Justificativa:**
+**Motivos principais:**
 - Contratação necessária para {solution_path}
 - Requisitos técnicos validados
 - Estimativa de recursos a definir
@@ -4306,7 +4338,7 @@ Posso usar este rascunho de PCA para seguirmos?"""
                 session.updated_at = datetime.utcnow()
                 db.session.commit()
                 return jsonify(_text_payload(session,
-                    'Sem previsão no PCA. Registre uma justificativa, se houver, e diga "seguir" para avançar.'))
+                    'Sem previsão no PCA. Registre o motivo, se houver, e diga "seguir" para avançar.'))
 
             if out['intent'] == 'pca_unknown':
                 pca.update({'present': None})
