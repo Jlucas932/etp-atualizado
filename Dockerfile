@@ -30,6 +30,10 @@ RUN pip install --upgrade pip setuptools wheel \
 # Copia o restante do projeto
 COPY . .
 
+# Garante que templates e assets estáticos estejam disponíveis na imagem final
+COPY static/ /app/static/
+COPY templates/ /app/templates/
+
 # Porta exposta pelo app
 EXPOSE 5002
 

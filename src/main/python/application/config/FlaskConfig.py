@@ -39,7 +39,7 @@ def get_config_values():
         'rate_limit_per_minute': int(os.getenv('RATE_LIMIT_PER_MINUTE', '30')),
     }
 
-from flask import Flask, send_from_directory, request, g, current_app, session
+from flask import Flask, send_from_directory, request, g, current_app, session, render_template
 from flask_cors import CORS
 from application.config.LimiterConfig import limiter
 from domain.interfaces.dataprovider.DatabaseConfig import init_database, db
@@ -103,29 +103,28 @@ def create_api():
     # Caminho absoluto da pasta atual
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # Encontrar a pasta static corretamente
+    # Encontrar as pastas static e templates corretamente
     # De: src/main/python/application/config/
-    # Para: static/ (na raiz do projeto)
-    static_path = os.path.join(basedir, '..', '..', '..', '..', '..', 'static')
-    static_path = os.path.abspath(static_path)
-    
-    # Encontrar a pasta templates corretamente
-    # De: src/main/python/application/config/
-    # Para: templates/ (na raiz do projeto)
-    template_path = os.path.join(basedir, '..', '..', '..', '..', '..', 'templates')
-    template_path = os.path.abspath(template_path)
-    
-    print(f"📁 Pasta static configurada: {static_path}")
-    print(f"📁 Pasta templates configurada: {template_path}")
-    print(f"📄 Verificando index.html: {os.path.exists(os.path.join(static_path, 'index.html'))}")
+    # Para: static/ e templates/ (na raiz do projeto)
+    static_path = os.path.abspath(os.path.join(basedir, '..', '..', '..', '..', '..', 'static'))
+    template_path = os.path.abspath(os.path.join(basedir, '..', '..', '..', '..', '..', 'templates'))
     
     # Criar diretório de prévias se não existir
     STATIC_PREVIEWS_DIR = os.path.join(static_path, 'previews')
     os.makedirs(STATIC_PREVIEWS_DIR, exist_ok=True)
-    print(f"📁 Pasta de prévias configurada: {STATIC_PREVIEWS_DIR}")
+    logging.info("📁 Pasta de prévias configurada: %s", STATIC_PREVIEWS_DIR)
     
     # Inicialização do app Flask
-    app = Flask(__name__, static_folder=static_path, template_folder=template_path)
+    app = Flask(
+        __name__,
+        static_folder=static_path,
+        template_folder=template_path,
+        static_url_path="/static"
+    )
+    app.logger.setLevel(logging.INFO)
+    app.logger.info("Templates dir: %s", app.template_folder)
+    app.logger.info("Static dir: %s", app.static_folder)
+    app.logger.info("Static URL path: %s", app.static_url_path)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'asdf#FGSgvasgf$5$WGT')
     
     # Configurar CORS para permitir requisições do frontend
@@ -209,33 +208,22 @@ def create_api():
     @limiter.exempt
     def serve(path):
         static_folder_path = app.static_folder
-        
-        print(f"🔍 Tentando servir: {path}")
-        print(f"📁 Static folder: {static_folder_path}")
-        
+
         if static_folder_path is None:
             return "Static folder not configured", 404
 
         if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
-            print(f"✅ Arquivo encontrado: {path}")
             return send_from_directory(static_folder_path, path)
         else:
-            index_path = os.path.join(static_folder_path, 'index.html')
-            print(f"🔍 Procurando index.html em: {index_path}")
-            print(f"📄 Index.html existe: {os.path.exists(index_path)}")
-            
-            if os.path.exists(index_path):
-                print("✅ Servindo index.html")
-                return send_from_directory(static_folder_path, 'index.html')
-            else:
-                # Listar arquivos na pasta static para debug
-                if os.path.exists(static_folder_path):
-                    files = os.listdir(static_folder_path)
-                    print(f"📂 Arquivos na pasta static: {files}")
-                else:
-                    print("❌ Pasta static não existe!")
-                
-                return f"index.html not found. Static folder: {static_folder_path}", 404
+            index_template = 'index.html'
+            template_exists = os.path.exists(os.path.join(app.template_folder, index_template))
+            if template_exists:
+                return render_template(index_template)
+            return f"{index_template} not found. Template folder: {app.template_folder}", 404
+
+    @app.get("/health")
+    def root_health():
+        return {"status": "ok"}, 200
     
     @app.before_request
     def _load_user_from_session():
