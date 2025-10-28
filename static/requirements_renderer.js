@@ -1,77 +1,34 @@
-// UMD simples: expõe em window.renderTextSmart (sem ESM)
-(function (global) {
-  function renderTextSmart(containerEl, text, stage) {
-    const esc = s => s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-    const badge = s => {
-      const low = s.toLowerCase();
-      if (low.includes("(obrigatório)")) return s.replace(/\(obrigatório\)/ig, '<span class="badge-od badge-obr">(Obrigatório)</span>');
-      if (low.includes("(desejável)"))  return s.replace(/\(desejável\)/ig,  '<span class="badge-od badge-des">(Desejável)</span>');
-      return s;
-    };
+export function renderRequirements(list) {
+  const ol = document.createElement('ol');
+  ol.className = 'req-list';
+  (list || []).forEach(req => {
+    const li = document.createElement('li');
+    const badge = document.createElement('span');
+    const crit = req.criticidade === 'Obrigatório' ? 'badge--obg' : 'badge--des';
+    badge.className = `badge ${crit}`;
+    badge.textContent = `(${req.criticidade || 'Desejável'})`;
+    const text = document.createElement('span');
+    text.className = 'req-text';
+    text.textContent = ` ${req.descricao || req.titulo || ''}`;
+    li.append(badge, text);
+    ol.appendChild(li);
+  });
+  return ol;
+}
 
-    const txt = (text || "").replace(/\r\n/g, "\n");
-    const lines = txt.split("\n");
-
-    const hasNumbered = lines.some(l => /^\s*\d+\.\s+/.test(l));
-    const hasBullets  = lines.some(l => /^\s*[•\-]\s+/.test(l));
-
-    containerEl.innerHTML = "";
-    if (stage === 'solution_strategies' && lines.some(l => /^\s*•\s+/.test(l))) {
-      // cards simples por estratégia
-      let block = document.createElement('div');
-      block.className = "formatted";
-      let curr = null;
-      lines.forEach(l => {
-        if (/^\s*•\s+/.test(l)) {
-          curr && block.appendChild(curr);
-          curr = document.createElement('div');
-          curr.style.marginBottom = "10px";
-          const title = document.createElement('div');
-          title.style.fontWeight = "600";
-          title.textContent = l.replace(/^\s*•\s+/, "");
-          curr.appendChild(title);
-        } else if (curr) {
-          const p = document.createElement('div');
-          p.textContent = l.trim();
-          curr.appendChild(p);
-        }
-      });
-      curr && block.appendChild(curr);
-      containerEl.appendChild(block);
-      return;
-    }
-
-    if (hasNumbered) {
-      const ol = document.createElement('ol');
-      lines.forEach(l => {
-        if (/^\s*\d+\.\s+/.test(l)) {
-          const li = document.createElement('li');
-          li.innerHTML = badge(esc(l.replace(/^\s*\d+\.\s+/, "")));
-          ol.appendChild(li);
-        } else {
-          const last = ol.lastElementChild;
-          if (last && l.trim()) last.innerHTML += "<br>" + badge(esc(l));
-        }
-      });
-      containerEl.appendChild(ol);
-      return;
-    }
-
-    if (hasBullets) {
-      const ul = document.createElement('ul');
-      lines.forEach(l => {
-        const li = document.createElement('li');
-        li.innerHTML = badge(esc(l.replace(/^\s*[•\-]\s+/, "")));
-        ul.appendChild(li);
-      });
-      containerEl.appendChild(ul);
-      return;
-    }
-
-    const pre = document.createElement('pre');
-    pre.className = "formatted";
-    pre.textContent = txt;
-    containerEl.appendChild(pre);
-  }
-  global.renderTextSmart = renderTextSmart;
-})(window);
+export function renderStrategies(list) {
+  const wrap = document.createElement('div');
+  wrap.className = 'strategy-grid';
+  (list || []).forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const h = document.createElement('h4'); h.textContent = s.titulo || '';
+    const prosT = document.createElement('strong'); prosT.textContent = 'Prós:';
+    const pros = document.createElement('ul'); (s.pros||[]).forEach(p=>{const li=document.createElement('li'); li.textContent=p; pros.appendChild(li);});
+    const consT = document.createElement('strong'); consT.textContent = 'Contras:';
+    const cons = document.createElement('ul'); (s.contras||[]).forEach(c=>{const li=document.createElement('li'); li.textContent=c; cons.appendChild(li);});
+    card.append(h, prosT, pros, consT, cons);
+    wrap.appendChild(card);
+  });
+  return wrap;
+}
