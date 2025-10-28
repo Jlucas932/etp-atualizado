@@ -8,6 +8,8 @@ from typing import List, Dict, Any, Protocol, Optional
 from config.models import MODEL, TEMP
 # from application.ai import prompt_templates
 
+from application.ai.sanitize import is_blocked_text, keep_only_expected
+
 logger = logging.getLogger(__name__)
 
 # Load strict per-stage templates from JSON file (required)
@@ -291,6 +293,215 @@ class FallbackGenerator:
             "9. (Desejável) Atualização tecnológica durante o contrato",
             "10. (Desejável) Relatórios periódicos de desempenho"
         ]
+
+
+SUGGEST_REQUIREMENTS_STRICT = """Você é um especialista técnico em contratações públicas. Receba a necessidade informada e gere requisitos verificáveis no formato JSON."""
+
+SOLUTION_STRATEGIES_STRICT = """Você é um consultor de estratégias de contratação. Receba a necessidade e a lista de requisitos já consolidados e devolva opções de estratégia no formato JSON."""
+
+
+def _strict_json_completion(prompt: str, temperature: float = 0.6):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        import openai
+
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model=MODEL,
+            temperature=temperature,
+            max_tokens=2000,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Você responde estritamente em JSON válido. "
+                        "Jamais inclua texto extra, comentários ou explicações."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+        )
+        if response and response.choices:
+            return (response.choices[0].message.content or "").strip()
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.error(f"[STRICT_GEN] erro ao chamar OpenAI: {exc}")
+
+    return None
+
+
+def _extract_json(text: str) -> Dict[str, Any]:
+    if not text:
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{[\s\S]*\}", text)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return {}
+    return {}
+
+
+def _sanitize_requisitos(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    cleaned: List[Dict[str, Any]] = []
+    seen = set()
+    for idx, raw in enumerate(items or [], start=1):
+        if not isinstance(raw, dict):
+            continue
+        titulo = (raw.get("titulo") or raw.get("descricao") or "").strip()
+        descricao = (raw.get("descricao") or raw.get("titulo") or "").strip()
+        criticidade = (raw.get("criticidade") or "Desejável").strip().title()
+        sla = (raw.get("sla") or "").strip()
+
+        if not descricao or is_blocked_text(descricao) or is_blocked_text(titulo):
+            continue
+
+        criticidade = "Obrigatório" if criticidade.lower().startswith("ob") else "Desejável"
+
+        norm_key = _normalize_line(descricao)
+        if not norm_key or norm_key in seen:
+            continue
+        seen.add(norm_key)
+
+        item = {
+            "titulo": titulo or f"Requisito {idx}",
+            "descricao": descricao,
+            "criticidade": criticidade,
+        }
+        if sla:
+            item["sla"] = sla
+        cleaned.append(item)
+
+    return cleaned[:20]
+
+
+def _sanitize_estrategias(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    sanitized: List[Dict[str, Any]] = []
+    for raw in items or []:
+        if not isinstance(raw, dict):
+            continue
+        titulo = (raw.get("titulo") or "").strip()
+        if not titulo or is_blocked_text(titulo):
+            continue
+        pros = [p.strip() for p in (raw.get("pros") or []) if isinstance(p, str) and p.strip()]
+        cons = [c.strip() for c in (raw.get("contras") or []) if isinstance(c, str) and c.strip()]
+        if not pros or not cons:
+            continue
+        if any(is_blocked_text(txt) for txt in pros + cons):
+            continue
+        sanitized.append({"titulo": titulo, "pros": pros, "contras": cons})
+    return sanitized[:3]
+
+
+def generate_requirements_strict(necessity: str, extra_details: str = "", context: Optional[List[str]] = None) -> Dict[str, Any]:
+    context = context or []
+    merged_details = (extra_details or "").strip()
+    context_block = "\n".join([f"- {chunk}" for chunk in context[:5] if chunk])
+
+    base_prompt = (
+        "Necessidade informada: {necessity}\n"
+        "{details}"
+        "{context_section}"
+        "Elabore entre 12 e 20 requisitos objetivos. Cada item precisa conter titulo, descricao objetiva, criticidade (Obrigatório ou Desejável) e, quando aplicável, sla."\
+        "\nRegras:\n"
+        "- Não inclua justificativa, nota técnica, contextualização narrativa ou perguntas.\n"
+        "- Não gere blocos introdutórios.\n"
+        "- Responda apenas com JSON seguindo o formato:\n"
+        "{{\n  \"requisitos\": [\n    {{\"titulo\": \"...\", \"descricao\": \"...\", \"criticidade\": \"Obrigatório|Desejável\", \"sla\": \"opcional\"}}\n  ]\n}}\n"
+    )
+
+    prompt = base_prompt.format(
+        necessity=(necessity or "Necessidade não informada").strip(),
+        details=(f"Informações adicionais: {merged_details}\n" if merged_details else ""),
+        context_section=(f"Referências relevantes:\n{context_block}\n" if context_block else ""),
+    )
+
+    temperatures = [0.6, 0.45, 0.3]
+    for temp in temperatures:
+        content = _strict_json_completion(prompt, temperature=temp)
+        data = keep_only_expected(_extract_json(content))
+        requisitos = _sanitize_requisitos(data.get("requisitos") if data else [])
+        if not requisitos or len(requisitos) < 12:
+            logger.warning("[STRICT_REQ] resposta inválida ou insuficiente, tentando novamente com temperatura menor")
+            continue
+        if any(is_blocked_text(json.dumps(req, ensure_ascii=False)) for req in requisitos):
+            logger.warning("[STRICT_REQ] termos bloqueados detectados, regenerando")
+            continue
+        return {"requisitos": requisitos[:20]}
+
+    logger.warning("[STRICT_REQ] usando fallback heurístico")
+    fallback = FallbackGenerator().suggest_requirements(necessity)
+    structured = []
+    for line in fallback:
+        parts = line.split(" ", 2)
+        criticidade = "Obrigatório" if "Obrigatório" in line else "Desejável"
+        descricao = line
+        structured.append(
+            {
+                "titulo": parts[2] if len(parts) == 3 else line,
+                "descricao": descricao,
+                "criticidade": criticidade,
+            }
+        )
+    while len(structured) < 12:
+        structured.append(
+            {
+                "titulo": f"Requisito complementar {len(structured) + 1}",
+                "descricao": "(Desejável) Garantir indicador de desempenho trimestral documentado",
+                "criticidade": "Desejável",
+            }
+        )
+    structured = _sanitize_requisitos(structured)
+    return {"requisitos": structured[:12]}
+
+
+def generate_strategies_strict(necessity: str, requisitos: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    requisitos = requisitos or []
+    resumo_req = "\n".join(
+        f"- {item.get('titulo') or item.get('descricao')}" for item in requisitos[:10] if isinstance(item, dict)
+    )
+
+    prompt = (
+        "Necessidade: {necessity}\n"
+        "Requisitos consolidados:\n{reqs}\n"
+        "Liste 2 a 3 estratégias de contratação distintas e factíveis. Para cada uma, responda apenas com JSON contendo titulo, pros e contras.\n"
+        "Formato obrigatório:\n"
+        "{{\n  \"estrategias\": [\n    {{\"titulo\": \"...\", \"pros\": [\"...\"], \"contras\": [\"...\"]}}\n  ]\n}}\n"
+        "Não inclua textos introdutórios, justificativas ou notas técnicas. Responda somente com JSON."
+    ).format(
+        necessity=(necessity or "Necessidade não informada").strip(),
+        reqs=resumo_req or "- Requisitos não informados",
+    )
+
+    temperatures = [0.5, 0.35, 0.2]
+    for temp in temperatures:
+        content = _strict_json_completion(prompt, temperature=temp)
+        data = keep_only_expected(_extract_json(content))
+        estrategias = _sanitize_estrategias(data.get("estrategias") if data else [])
+        if not estrategias or not (2 <= len(estrategias) <= 3):
+            logger.warning("[STRICT_STRAT] quantidade inválida de estratégias, regenerando")
+            continue
+        return {"estrategias": estrategias[:3]}
+
+    logger.warning("[STRICT_STRAT] fallback estático utilizado")
+    fallback = [
+        {
+            "titulo": "Aquisição direta com lote único",
+            "pros": ["Entrega integral de uma só vez", "Menor custo administrativo"],
+            "contras": ["Menor flexibilidade operacional", "Dependência de um único fornecedor"],
+        },
+        {
+            "titulo": "Contrato por desempenho",
+            "pros": ["Pagamentos vinculados a resultados", "Incentivo à inovação"],
+            "contras": ["Necessidade de métricas robustas", "Maior esforço de fiscalização"],
+        },
+    ]
+    return {"estrategias": fallback}
 
 def get_system_prompt(stage: str) -> str:
     """
