@@ -7,15 +7,28 @@ db = SQLAlchemy()
 def init_database(app, basedir):
     """Inicializa e configura o banco de dados"""
     
-    # Configurar database usando DATABASE_URL (obrigatório)
+    # Configurar database usando DATABASE_URL
     database_url = os.getenv('DATABASE_URL')
     
     if not database_url:
-        raise ValueError("DATABASE_URL environment variable is required. PostgreSQL connection must be configured.")
+        raise RuntimeError(
+            "❌ DATABASE_URL não configurada. "
+            "Configure no docker-compose.yml ou arquivo .env. "
+            "Exemplo: postgresql+psycopg2://user:pass@host:5432/db"
+        )
     
-    # Configurar PostgreSQL usando DATABASE_URL
+    if not database_url.startswith('postgresql'):
+        raise RuntimeError(
+            f"❌ DATABASE_URL deve ser PostgreSQL. "
+            f"Recebido: {database_url.split('://')[0]}. "
+            f"SQLite não é mais suportado para conversas persistentes."
+        )
+    
+    # Configurar PostgreSQL
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"✅ Configurando PostgreSQL: {database_url}")
+    masked_url = database_url.split('@')[0].split('://')[0] + "://***@" + database_url.split('@')[1] if '@' in database_url else "***"
+    print(f"✅ Configurando PostgreSQL: {masked_url}")
+    print(f"ℹ️  Banco de dados: PostgreSQL (produção)")
     
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
@@ -24,9 +37,11 @@ def init_database(app, basedir):
     
     # Importar modelos para garantir que sejam registrados
     from domain.dto.UserDto import User
-    from domain.dto.EtpOrm import EtpSession
+    from domain.dto.EtpOrm import EtpSession, EtpDocument
     # Importar novos modelos KB (substituem os antigos do KnowledgeBaseDto)
     from domain.dto.KbDto import KbDocument, KbChunk, LegalNormCache
+    # Importar modelos de conversação para chat persistente
+    from domain.dto.ConversationModels import Conversation, Message
 
     with app.app_context():
         print("🔧 Criando tabelas usando SQLAlchemy...")

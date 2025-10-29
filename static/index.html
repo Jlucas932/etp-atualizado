@@ -111,13 +111,14 @@
                 <div class="chat-messages-container" id="chatMessages">
                     <!-- Mensagens são adicionadas dinamicamente via JavaScript -->
                 </div>
-                <!-- Área de input para o usuário digitar mensagens -->
+                <!-- indicador de fase removido -->
+                <!-- All actions now via text input - no buttons -->
                 <footer class="chat-input-area">
                     <div class="chat-input-wrapper">
                         <button class="attach-btn" aria-label="Anexar arquivo">
                             <i class="fas fa-paperclip"></i>
                         </button>
-                        <textarea id="userInput" placeholder="Pergunte alguma coisa..." rows="1"></textarea>
+                        <textarea id="userInput" placeholder="Digite sua mensagem..." rows="1"></textarea>
                         <button id="sendBtn" class="send-btn" aria-label="Enviar mensagem">
                             <i class="fas fa-paper-plane"></i>
                         </button>
@@ -165,6 +166,7 @@
     <!-- Scripts da aplicação -->
     <script src="requirements_renderer.js"></script>
     <script src="script.js"></script>
+    <!-- All document generation actions now via text commands, no buttons -->
 </body>
 </html>
 

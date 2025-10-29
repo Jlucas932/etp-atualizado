@@ -79,7 +79,7 @@ def analyze_need_safely(user_msg: str, openai_client):
         """
 
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1",
             messages=[{"role": "user", "content": need_analysis_prompt}],
             max_tokens=200,
             temperature=0.1

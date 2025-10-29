@@ -505,3 +505,77 @@ def search_legal(objective_slug: str, query: str, k: int = 8) -> List[Dict]:
     """Função de conveniência para busca de normas legais"""
     retrieval = get_retrieval_instance()
     return retrieval.search_legal(objective_slug, query, k)
+
+def retrieve_for_stage(necessity: str, stage: str, k: int = 12) -> List[Dict]:
+    """
+    Retrieve chunks from RAG based on stage, prioritizing relevant sections.
+    
+    Args:
+        necessity: User's necessity description
+        stage: Current stage in the flow
+        k: Number of chunks to retrieve
+        
+    Returns:
+        List of chunks with id, section, text, and score
+    """
+    retrieval = get_retrieval_instance()
+    
+    # Define section priorities by stage
+    stage_section_map = {
+        'suggest_requirements': ['requisito', 'necessidade'],
+        'refine_requirements': ['requisito', 'necessidade'],
+        'solution_path': ['requisito', 'norma_legal'],
+        'pca': ['requisito'],
+        'legal_norms': ['norma_legal', 'marco_legal'],
+        'qty_value': ['requisito'],
+        'installment': ['requisito'],
+        'summary': ['requisito', 'norma_legal'],
+        'preview': ['requisito', 'norma_legal']
+    }
+    
+    # Get prioritized sections for this stage
+    priority_sections = stage_section_map.get(stage, ['requisito'])
+    
+    results = []
+    chunks_per_section = max(k // len(priority_sections), 3)
+    
+    # Search in each priority section
+    for section in priority_sections:
+        try:
+            section_results = retrieval._hybrid_search(
+                section_type=section,
+                objective_slug='',  # No filtering by objective
+                query=necessity,
+                k=chunks_per_section
+            )
+            results.extend(section_results)
+        except Exception as e:
+            logger.warning(f"Error searching section {section}: {e}")
+    
+    # If no results from priority sections, try any section
+    if not results:
+        try:
+            # Try searching requisito as fallback
+            results = retrieval._hybrid_search(
+                section_type='requisito',
+                objective_slug='',
+                query=necessity,
+                k=k
+            )
+        except Exception as e:
+            logger.error(f"Error in fallback search: {e}")
+    
+    # Sort by hybrid score and return top k
+    results.sort(key=lambda x: x.get('hybrid_score', 0), reverse=True)
+    
+    # Format results for generator
+    formatted_results = []
+    for r in results[:k]:
+        formatted_results.append({
+            'id': r.get('chunk_id'),
+            'section': r.get('section_type'),
+            'text': r.get('content'),
+            'score': r.get('hybrid_score', 0)
+        })
+    
+    return formatted_results

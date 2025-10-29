@@ -22,14 +22,24 @@ if command -v docker &> /dev/null && command -v docker-compose &> /dev/null; the
         echo "⏳ Aguardando PostgreSQL ficar pronto..."
         sleep 5
     else
-        echo "❌ ERRO: Não foi possível iniciar PostgreSQL. PostgreSQL é obrigatório."
-        echo "   Configure o Docker e PostgreSQL antes de continuar."
-        exit 1
+        echo "⚠️  Não foi possível iniciar PostgreSQL via Docker."
+        echo "   Continuando com SQLite como fallback..."
+        # Limpar DATABASE_URL do .env para forçar SQLite
+        if [ -f .env ]; then
+            sed -i.bak '/^DATABASE_URL=/d' .env
+            sed -i.bak '/^DB_URL=/d' .env
+            sed -i.bak 's/^DB_VENDOR=postgresql/DB_VENDOR=sqlite/' .env
+        fi
     fi
 else
-    echo "❌ ERRO: Docker não encontrado. PostgreSQL é obrigatório."
-    echo "   Instale Docker e Docker Compose antes de continuar."
-    exit 1
+    echo "⚠️  Docker não encontrado."
+    echo "   Continuando com SQLite como banco de dados local..."
+    # Limpar DATABASE_URL do .env para forçar SQLite
+    if [ -f .env ]; then
+        sed -i.bak '/^DATABASE_URL=/d' .env
+        sed -i.bak '/^DB_URL=/d' .env
+        sed -i.bak 's/^DB_VENDOR=postgresql/DB_VENDOR=sqlite/' .env
+    fi
 fi
 
 # Instalar dependências se necessário
