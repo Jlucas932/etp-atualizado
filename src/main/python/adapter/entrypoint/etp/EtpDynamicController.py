@@ -5,6 +5,8 @@ import tempfile
 import logging
 import traceback
 from datetime import datetime
+from pathlib import Path
+from typing import Any, List, Optional, Tuple
 from flask import Blueprint, request, jsonify, send_file, g
 from flask_cors import cross_origin
 import re
@@ -26,6 +28,12 @@ from domain.usecase.etp.document_composer import compose_etp_document
 from domain.usecase.etp.html_renderer import render_etp_html
 from application.ai.generator import get_etp_generator, FallbackGenerator, dedupe_requirements
 from application.ai.hybrid_models import OpenAIChatConsultive, OpenAIFinalWriter, OpenAIIntentParser
+from application.nlu.intent_requirements import (
+    ACCEPT as REQ_ACCEPT,
+    EDIT as REQ_EDIT,
+    UNCLEAR as REQ_UNCLEAR,
+    detect_intent as detect_requirements_intent,
+)
 from application.ai import intents
 from application.services.preview_builder import build_preview, build_etp_markdown
 from domain.usecase.etp.state_machine import (
@@ -72,6 +80,192 @@ STAGE_ORDER = [
 NEXT_STAGE = {stage: STAGE_ORDER[i+1] for i, stage in enumerate(STAGE_ORDER[:-1])}
 
 logger = logging.getLogger(__name__)
+
+_REQUIREMENTS_FOLLOWUP_TEXT: Optional[str] = None
+
+
+def _requirements_followup_text() -> str:
+    """Load follow-up prompt text from template file (cached)."""
+
+    global _REQUIREMENTS_FOLLOWUP_TEXT
+    if _REQUIREMENTS_FOLLOWUP_TEXT is not None:
+        return _REQUIREMENTS_FOLLOWUP_TEXT
+
+    template_path = (
+        Path(__file__).resolve().parents[3]
+        / "application"
+        / "messages"
+        / "templates"
+        / "requirements_followup.pt-BR.txt"
+    )
+
+    try:
+        _REQUIREMENTS_FOLLOWUP_TEXT = template_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        _REQUIREMENTS_FOLLOWUP_TEXT = (
+            "Esses requisitos fazem sentido para sua necessidade? Quer ajustar algo agora?\n"
+            "Posso trocar, remover ou adicionar itens, e também adaptar prazos, métricas e SLAs."
+        )
+
+    return _REQUIREMENTS_FOLLOWUP_TEXT
+
+
+def _extract_requirement_text(item: Any) -> str:
+    if isinstance(item, dict):
+        return (
+            item.get("text")
+            or item.get("descricao")
+            or item.get("requirement")
+            or str(item)
+        )
+    return str(item)
+
+
+def _format_requirements_list(items: List[Any]) -> str:
+    lines: List[str] = []
+    for idx, item in enumerate(items, 1):
+        text = _extract_requirement_text(item).strip()
+        if not text:
+            continue
+        lines.append(f"{idx}. {text}")
+    return "\n".join(lines)
+
+
+def _update_dict_requirement(item: dict, new_text: str) -> dict:
+    updated = dict(item)
+    for key in ("text", "descricao", "requirement"):
+        if key in updated and isinstance(updated[key], str) and updated[key]:
+            updated[key] = new_text
+            return updated
+    updated["text"] = new_text
+    return updated
+
+
+def _apply_requirements_edit(requirements: List[Any], user_text: str) -> Tuple[Optional[List[Any]], str]:
+    """Apply simple edit operations (remove, replace, add, SLA change)."""
+
+    if not user_text:
+        return None, (
+            "Não consegui identificar o ajuste. Pode me dizer qual item quer alterar, "
+            "remover ou o que deseja adicionar?"
+        )
+
+    lowered = user_text.lower()
+    updated: List[Any] = list(requirements)
+
+    # Remove by index (e.g., "remove o 2")
+    remove_idx_match = re.search(r"remov\w*\s*(?:o\s+|a\s+)?(?:item\s+)?(\d+)", lowered)
+    if remove_idx_match:
+        idx = int(remove_idx_match.group(1)) - 1
+        if 0 <= idx < len(updated):
+            removed_item = updated.pop(idx)
+            removed_text = _extract_requirement_text(removed_item).strip()
+            return updated, f"Removi o item {idx + 1}: {removed_text}"
+
+    # Replace by index ("troque o 3 por ...")
+    replace_idx_match = re.search(
+        r"(troq\w*|substitu\w*|altera\w*|muda\w*)\s*(?:o\s+|a\s+)?(?:item\s+)?(\d+)\s*(?:por|para)\s+(.+)$",
+        user_text,
+        flags=re.IGNORECASE,
+    )
+    if replace_idx_match:
+        idx = int(replace_idx_match.group(2)) - 1
+        new_value = replace_idx_match.group(3).strip()
+        if 0 <= idx < len(updated) and new_value:
+            old_item = updated[idx]
+            old_text = _extract_requirement_text(old_item).strip()
+            if isinstance(old_item, dict):
+                updated[idx] = _update_dict_requirement(old_item, new_value)
+            else:
+                updated[idx] = new_value
+            return updated, f"Troquei o item {idx + 1}: '{old_text}' por '{new_value}'"
+
+    # Remove by partial text ("remove backup")
+    if "remov" in lowered:
+        remove_text_match = re.search(
+            r"remov\w*\s*(?:o\s+|a\s+)?(?:item\s+)?(?:de\s+)?(.+)",
+            user_text,
+            flags=re.IGNORECASE,
+        )
+        if remove_text_match:
+            snippet = remove_text_match.group(1).strip()
+            if snippet:
+                for idx, item in enumerate(updated):
+                    if snippet.lower() in _extract_requirement_text(item).lower():
+                        removed_item = updated.pop(idx)
+                        removed_text = _extract_requirement_text(removed_item).strip()
+                        return updated, f"Removi o item {idx + 1}: {removed_text}"
+
+    # Replace by partial text ("troque o requisito de backup por ...")
+    replace_text_match = re.search(
+        r"(troq\w*|substitu\w*|altera\w*|muda\w*)\s+(?:o\s+|a\s+)?(.+?)\s+(?:por|para)\s+(.+)$",
+        user_text,
+        flags=re.IGNORECASE,
+    )
+    if replace_text_match:
+        target = replace_text_match.group(2).strip()
+        new_value = replace_text_match.group(3).strip()
+        if target and new_value:
+            for idx, item in enumerate(updated):
+                if target.lower() in _extract_requirement_text(item).lower():
+                    old_text = _extract_requirement_text(item).strip()
+                    if isinstance(item, dict):
+                        updated[idx] = _update_dict_requirement(item, new_value)
+                    else:
+                        updated[idx] = new_value
+                    return updated, f"Troquei o item {idx + 1}: '{old_text}' por '{new_value}'"
+
+    # Add new requirement ("adicione um requisito sobre ...", "faltou ...")
+    add_match = re.search(
+        r"(adicione|inclua|inclui|adiciona)\b.+?\b(sobre|de|com)\b\s+(.+)$",
+        user_text,
+        flags=re.IGNORECASE,
+    )
+    if add_match:
+        new_req = add_match.group(3).strip()
+        if new_req:
+            updated.append(new_req)
+            return updated, f"Adicionei um novo requisito: '{new_req}'"
+
+    faltou_match = re.search(
+        r"faltou\s+(?:um\s+)?(?:requisito\s+)?(.+)$",
+        user_text,
+        flags=re.IGNORECASE,
+    )
+    if faltou_match:
+        new_req = faltou_match.group(1).strip()
+        if new_req:
+            updated.append(new_req)
+            return updated, f"Adicionei um novo requisito: '{new_req}'"
+
+    # SLA adjustments ("mude o SLA de 98 para 99")
+    sla_match = re.search(r"sla.*?(\d{2,3}).*?para.*?(\d{2,3})", lowered)
+    if sla_match:
+        old_sla, new_sla = sla_match.group(1), sla_match.group(2)
+        for idx, item in enumerate(updated):
+            text = _extract_requirement_text(item)
+            if re.search(r"\bSLA\b", text, flags=re.IGNORECASE) and old_sla in text:
+                if isinstance(item, dict):
+                    updated_item = dict(item)
+                    replaced = False
+                    for key in ("text", "descricao", "requirement"):
+                        value = updated_item.get(key)
+                        if isinstance(value, str) and old_sla in value:
+                            updated_item[key] = re.sub(old_sla, new_sla, value, count=1)
+                            replaced = True
+                            break
+                    if not replaced and isinstance(updated_item.get("sla"), dict):
+                        updated_item["sla"] = dict(updated_item["sla"])
+                        updated_item["sla"]["valor"] = new_sla
+                    updated[idx] = updated_item
+                else:
+                    updated[idx] = re.sub(old_sla, new_sla, text, count=1)
+                return updated, f"Ajustei o SLA de {old_sla} para {new_sla} no item {idx + 1}"
+
+    return None, (
+        "Não consegui identificar o ajuste. Pode me dizer qual item quer alterar, "
+        "remover ou o que deseja adicionar?"
+    )
 
 def _get_openai_client():
     """Get or create OpenAI client"""
@@ -1066,74 +1260,114 @@ def chat_stage_based():
                 response_parts.append(f"\n{justification}")
             
             ai_response = "\n\n".join(response_parts) if response_parts else ""
-            
+
+            followup_text = _requirements_followup_text()
+            if followup_text:
+                ai_response = f"{ai_response}\n\n{followup_text}" if ai_response else followup_text
+
+            answers = session.get_answers() or {}
+            state = answers.get('state', {})
+            state['awaiting_requirements_feedback'] = True
+            state['awaiting_requirements_edit'] = False
+            state['requirements_current'] = list(requirements)
+            answers['state'] = state
+            session.set_answers(answers)
+            logger.info("[REQUIREMENTS] Follow-up asked")
+
             # Store in generator_output for compatibility
             generator_output = result
         
         elif current_stage == 'suggest_requirements':
-            # Accept natural language: confirmation to advance, or refinement input
-            user_lower = user_message.lower().strip()
-            
-            # Free confirmation regex as per issue requirements
-            free_confirm_pattern = r'^\s*(ok(ay)?|pode( )?(seguir|continuar)|perfeito|segue|manda|entendido)\s*\.?$'
-            is_free_confirmation = re.match(free_confirm_pattern, user_lower, re.IGNORECASE)
-            
-            if is_free_confirmation:
-                # User confirmed freely - advance to solution_strategies
-                next_stage = 'solution_strategies'
-                # Provide brief transition message instead of empty response
-                ai_response = "Perfeito! Vamos pensar nas estratégias de contratação mais adequadas para o seu caso."
-            
-            else:
-                # User is providing refinement information (natural language)
-                # Use refine stage to integrate their input
-                from rag.retrieval import retrieve_for_stage
-                context = retrieve_for_stage(necessity, 'refine', k=12)
-                
-                # Build history from messages
-                history = []
-                try:
-                    messages = MessageRepo.list_for_conversation(conversation_id) or []
-                except Exception:
-                    messages = []
-                for msg in messages[-10:]:
-                    history.append({
-                        'role': msg.role,
-                        'content': msg.content
-                    })
-                
-                # Call new generate_answer for refine
-                from application.ai.generator import generate_answer
-                rag_context = {
-                    'chunks': context,
-                    'necessity': necessity,
-                    'requirements': [req.get('text') if isinstance(req, dict) else str(req) for req in requirements]
-                }
-                
-                result = generate_answer('refine', history, user_message, rag_context)
-                
-                # Update requirements
-                new_requirements = result.get('requirements', [])
-                if new_requirements:
-                    formatted_reqs = []
-                    for req_text in new_requirements:
-                        formatted_reqs.append({'text': req_text, 'descricao': req_text})
-                    
-                    # Deduplicate before storing
-                    formatted_reqs = dedupe_requirements(formatted_reqs)
-                    
-                    session.set_requirements(formatted_reqs)
-                    requirements = formatted_reqs
-                
-                # Build response from generator output
-                intro = result.get('intro', '')
-                if new_requirements:
-                    reqs_text = "\n".join(new_requirements)
-                    ai_response = f"{intro}\n\n{reqs_text}" if intro else reqs_text
+            answers = session.get_answers() or {}
+            state = answers.get('state', {})
+            awaiting_feedback = bool(state.get('awaiting_requirements_feedback'))
+            awaiting_edit = bool(state.get('awaiting_requirements_edit'))
+
+            intent = detect_requirements_intent(user_message)
+            logger.info(f"[REQUIREMENTS] Intent={intent}")
+
+            if awaiting_edit:
+                if intent == REQ_ACCEPT:
+                    state['awaiting_requirements_edit'] = False
+                    state['awaiting_requirements_feedback'] = False
+                    answers['state'] = state
+                    session.set_answers(answers)
+                    next_stage = 'solution_strategies'
+                    ai_response = "Perfeito. Vou seguir para a próxima etapa."
                 else:
-                    ai_response = intro if intro else "Requisitos atualizados."
-                
-                next_stage = 'suggest_requirements'  # Stay in stage for more refinements
+                    updated_list, edit_message = _apply_requirements_edit(requirements, user_message)
+                    if updated_list is None:
+                        ai_response = edit_message
+                        next_stage = 'suggest_requirements'
+                    else:
+                        session.set_requirements(updated_list)
+                        requirements = updated_list
+                        answers['requirements'] = list(updated_list)
+                        state['awaiting_requirements_edit'] = False
+                        state['awaiting_requirements_feedback'] = True
+                        state['requirements_current'] = list(updated_list)
+                        answers['state'] = state
+                        session.set_answers(answers)
+                        formatted = _format_requirements_list(updated_list)
+                        ai_response = (
+                            f"{edit_message}\n\n{formatted}\n\n"
+                            "Queremos deixar isso com a sua cara. Ficou bom assim ou prefere ajustar mais algum item?"
+                        )
+                        logger.info(f"[REQUIREMENTS] Edit operation={edit_message}")
+                        logger.info("[REQUIREMENTS] Follow-up asked")
+                        next_stage = 'suggest_requirements'
+            else:
+                if intent == REQ_ACCEPT:
+                    state['awaiting_requirements_feedback'] = False
+                    state['awaiting_requirements_edit'] = False
+                    answers['state'] = state
+                    session.set_answers(answers)
+                    next_stage = 'solution_strategies'
+                    ai_response = "Perfeito. Vou seguir para a próxima etapa."
+                elif intent == REQ_EDIT:
+                    updated_list, edit_message = _apply_requirements_edit(requirements, user_message)
+                    if updated_list is None:
+                        state['awaiting_requirements_feedback'] = False
+                        state['awaiting_requirements_edit'] = True
+                        answers['requirements'] = list(requirements)
+                        state['requirements_current'] = list(requirements)
+                        answers['state'] = state
+                        session.set_answers(answers)
+                        ai_response = (
+                            "Certo. Me diga o que você quer ajustar. Posso trocar um item pelo número, "
+                            "remover um específico ou adicionar novos requisitos."
+                        )
+                        next_stage = 'suggest_requirements'
+                    else:
+                        session.set_requirements(updated_list)
+                        requirements = updated_list
+                        answers['requirements'] = list(updated_list)
+                        state['awaiting_requirements_feedback'] = True
+                        state['awaiting_requirements_edit'] = False
+                        state['requirements_current'] = list(updated_list)
+                        answers['state'] = state
+                        session.set_answers(answers)
+                        formatted = _format_requirements_list(updated_list)
+                        ai_response = (
+                            f"{edit_message}\n\n{formatted}\n\n"
+                            "Queremos deixar isso com a sua cara. Ficou bom assim ou prefere ajustar mais algum item?"
+                        )
+                        logger.info(f"[REQUIREMENTS] Edit operation={edit_message}")
+                        logger.info("[REQUIREMENTS] Follow-up asked")
+                        next_stage = 'suggest_requirements'
+                else:
+                    if not awaiting_feedback:
+                        state['awaiting_requirements_feedback'] = True
+                        state['requirements_current'] = list(requirements)
+                        answers['requirements'] = list(requirements)
+                        answers['state'] = state
+                        session.set_answers(answers)
+                        logger.info("[REQUIREMENTS] Follow-up asked")
+                    ai_response = (
+                        "Você quer manter como está ou prefere ajustar algum item? "
+                        "Se quiser, posso sugerir alternativas."
+                    )
+                    next_stage = 'suggest_requirements'
         
         elif current_stage == 'refine_requirements_assist':
             # Handle refinement commands

@@ -1,0 +1,2 @@
+Esses requisitos fazem sentido para sua necessidade? Quer ajustar algo agora?
+Posso trocar, remover ou adicionar itens, e também adaptar prazos, métricas e SLAs.
