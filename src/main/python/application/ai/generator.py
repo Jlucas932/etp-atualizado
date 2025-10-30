@@ -9,6 +9,100 @@ from config.models import MODEL, TEMP
 
 logger = logging.getLogger(__name__)
 
+# Compatibilidade com chamadores legados que dependem de constantes padrão
+# de modelo e temperatura neste módulo.
+DEFAULT_MODEL = MODEL
+DEFAULT_TEMP = TEMP
+
+
+# ✅ Wrapper compatível com EtpDynamicController
+def generate_text_with_model(
+    prompt: str,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+) -> str:
+    """Compat layer para módulos que importam generate_text_with_model."""
+
+    base_model = model or DEFAULT_MODEL
+    base_temp = DEFAULT_TEMP if temperature is None else temperature
+
+    try:
+        if "generate_text" in globals():
+            result = globals()["generate_text"](
+                prompt,
+                model=base_model,
+                temperature=base_temp,
+            )
+        elif "generate_response" in globals():
+            result = globals()["generate_response"](
+                prompt,
+                model=base_model,
+                temperature=base_temp,
+            )
+        elif "generate_completion" in globals():
+            result = globals()["generate_completion"](
+                prompt,
+                model=base_model,
+                temperature=base_temp,
+            )
+        elif "run_model" in globals():
+            result = globals()["run_model"](
+                prompt,
+                model=base_model,
+                temperature=base_temp,
+            )
+        else:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise RuntimeError("OPENAI_API_KEY não configurada para geração de texto")
+
+            import openai
+
+            client = openai.OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model=base_model,
+                temperature=base_temp,
+                max_tokens=800,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Você é um consultor que escreve requisitos objetivos, "
+                            "claros e aderentes a contratações públicas."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            result = response.choices[0].message.content if response and response.choices else ""
+
+        if isinstance(result, dict):
+            if "text" in result:
+                return str(result["text"]).strip()
+            if "content" in result:
+                return str(result["content"]).strip()
+            choices = result.get("choices")
+            if isinstance(choices, list) and choices:
+                choice = choices[0]
+                if isinstance(choice, dict):
+                    message = choice.get("message")
+                    if isinstance(message, dict):
+                        return str(message.get("content", "")).strip()
+                    if message:
+                        return str(message).strip()
+                    if "text" in choice:
+                        return str(choice["text"]).strip()
+
+        if hasattr(result, "content"):
+            return str(result.content).strip()
+
+        return str(result).strip()
+
+    except Exception as exc:
+        logger.error(f"[generate_text_with_model] Erro ao gerar texto: {exc}")
+        logger.debug(traceback.format_exc())
+        return "Erro ao gerar resposta. Verifique a configuração do modelo."
+
 def _safe_nonempty(text: str, stage: str, client=None, messages: list = None) -> str:
     """
     Ensures the response is not empty. If empty:
