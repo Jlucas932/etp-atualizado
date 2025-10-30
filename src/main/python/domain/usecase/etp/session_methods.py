@@ -1,4 +1,9 @@
 """
+
+import re
+from typing import Iterable, List, Sequence
+
+from domain.services.etp_dynamic import regenerate_one
 Métodos auxiliares para manipulação de requisitos na sessão
 Renumeração estável R1..Rn e preservação de justificativas
 """
@@ -35,6 +40,45 @@ def generate_justification(requirement_text, necessity):
         return f"Requisito essencial para atendimento de {necessity_lower}"
 
 
+def _parse_indices(items: Sequence[str]) -> List[int]:
+    parsed: List[int] = []
+    for raw in items or []:
+        if isinstance(raw, str):
+            match = re.search(r'(\d+)', raw)
+            if match:
+                idx = int(match.group(1))
+                if idx not in parsed:
+                    parsed.append(idx)
+        elif isinstance(raw, int) and raw not in parsed:
+            parsed.append(raw)
+    parsed.sort()
+    return parsed
+
+
+def _regenerate_indices(session, indices: Iterable[int], necessity: str) -> None:
+    current = session.get_requirements()
+    if not current:
+        return
+
+    index_list = sorted({i for i in indices if isinstance(i, int) and i >= 1})
+    if not index_list:
+        return
+
+    previous_by_pos = {i: req for i, req in enumerate(current, start=1)}
+    updated = current
+    for idx in index_list:
+        updated = regenerate_one(necessity or "", updated, idx)
+
+    target_set = set(index_list)
+    for position, req in enumerate(updated, start=1):
+        if position not in target_set:
+            old = previous_by_pos.get(position)
+            if old and old.get('justification') and 'justification' not in req:
+                req['justification'] = old['justification']
+
+    session.set_requirements(updated)
+
+
 def apply_command_to_session(session, command_result, necessity):
     """
     Aplica comando parseado à sessão com renumeração estável
@@ -68,19 +112,21 @@ def apply_command_to_session(session, command_result, necessity):
     elif intent == 'edit':
         # Editar requisitos específicos
         new_text = command_result.get('new_text', '')
-        updated_requirements = []
-        
-        for req in current_requirements:
-            if req['id'] in items:
-                # Preservar justificativa existente ou gerar nova
-                if new_text:
+        should_regenerate = command_result.get('regenerate') or not new_text
+
+        if should_regenerate:
+            numeric_indices = _parse_indices(items)
+            _regenerate_indices(session, numeric_indices, necessity)
+        else:
+            updated_requirements = []
+            for req in current_requirements:
+                if req['id'] in items and new_text:
                     req['text'] = new_text
                     if not req.get('justification'):
                         req['justification'] = generate_justification(new_text, necessity)
-                # Se não há novo texto, marcar para regeneração pelo LLM
-            updated_requirements.append(req)
-        
-        session.set_requirements(updated_requirements)
+                updated_requirements.append(req)
+
+            session.set_requirements(updated_requirements)
         
     elif intent == 'add':
         # Adicionar novos requisitos
