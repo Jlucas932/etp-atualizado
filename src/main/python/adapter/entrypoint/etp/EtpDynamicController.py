@@ -26,7 +26,12 @@ from domain.usecase.etp.price_research_interpreter import parse_price_research
 from domain.usecase.etp.legal_basis_interpreter import parse_legal_basis
 from domain.usecase.etp.document_composer import compose_etp_document
 from domain.usecase.etp.html_renderer import render_etp_html
-from application.ai.generator import get_etp_generator, FallbackGenerator, dedupe_requirements
+from application.ai.generator import (
+    get_etp_generator,
+    FallbackGenerator,
+    dedupe_requirements,
+    generate_text_with_model,
+)
 from application.ai.hybrid_models import OpenAIChatConsultive, OpenAIFinalWriter, OpenAIIntentParser
 from application.nlu.intent_requirements import (
     ACCEPT as REQ_ACCEPT,
@@ -129,6 +134,36 @@ def _format_requirements_list(items: List[Any]) -> str:
             continue
         lines.append(f"{idx}. {text}")
     return "\n".join(lines)
+
+
+def handle_requirements_edit(user_message: str, current_requirements: List[str], context_need: str) -> List[str]:
+    """Replace numbered requirements using the language model and clean suffixes."""
+
+    indices = [int(n) for n in re.findall(r"\b\d+\b", user_message or "")]
+    if not indices:
+        return current_requirements
+
+    updated_requirements: List[str] = []
+    need_context = context_need or "a necessidade informada pelo usuário"
+
+    for i, req in enumerate(current_requirements, start=1):
+        req_text = _extract_requirement_text(req).strip()
+        if i in indices:
+            prompt = (
+                "Substitua este requisito por outro mais adequado à necessidade: "
+                f"{need_context}. "
+                f"Requisito original: {req_text}. "
+                "Não use marcações como (Obrigatório) ou (Desejável). "
+                "Mantenha o estilo formal, objetivo e dentro do contexto da contratação pública."
+            )
+            new_req = generate_text_with_model(prompt).strip()
+            new_req = re.sub(r"\s*\(.*?\)", "", new_req).strip()
+            updated_requirements.append(new_req)
+        else:
+            clean_req = re.sub(r"\s*\(.*?\)", "", req_text).strip()
+            updated_requirements.append(clean_req)
+
+    return updated_requirements
 
 
 def _update_dict_requirement(item: dict, new_text: str) -> dict:
@@ -1246,7 +1281,13 @@ def chat_stage_based():
             
             # Deduplicate requirements before storing
             requirements = dedupe_requirements(requirements)
-            
+
+            # Clean suffix markers such as (Obrigatório) and normalize spacing
+            requirements = [
+                re.sub(r"\s*\(.*?\)", "", _extract_requirement_text(req)).strip()
+                for req in requirements
+            ]
+
             # Store requirements
             session.set_requirements(requirements)
             
@@ -1282,12 +1323,31 @@ def chat_stage_based():
             state = answers.get('state', {})
             awaiting_feedback = bool(state.get('awaiting_requirements_feedback'))
             awaiting_edit = bool(state.get('awaiting_requirements_edit'))
+            need_context = session.necessity or state.get('need_description') or ''
 
             intent = detect_requirements_intent(user_message)
             logger.info(f"[REQUIREMENTS] Intent={intent}")
 
             if awaiting_edit:
-                if intent == REQ_ACCEPT:
+                updated_model_list = handle_requirements_edit(user_message, requirements, need_context)
+                if updated_model_list != requirements:
+                    session.set_requirements(updated_model_list)
+                    requirements = updated_model_list
+                    answers['requirements'] = list(updated_model_list)
+                    state['awaiting_requirements_edit'] = False
+                    state['awaiting_requirements_feedback'] = True
+                    state['requirements_current'] = list(updated_model_list)
+                    answers['state'] = state
+                    session.set_answers(answers)
+                    formatted = _format_requirements_list(updated_model_list)
+                    ai_response = (
+                        "Aqui está a lista atualizada de requisitos conforme solicitado:\n\n"
+                        f"{formatted}\n\n"
+                        "Deseja ajustar mais algum item ou posso seguir para as estratégias de solução?"
+                    )
+                    next_stage = 'suggest_requirements'
+                    logger.info("[REQUIREMENTS] Model-based edit applied during awaiting_edit state")
+                elif intent == REQ_ACCEPT:
                     state['awaiting_requirements_edit'] = False
                     state['awaiting_requirements_feedback'] = False
                     answers['state'] = state
@@ -1317,7 +1377,25 @@ def chat_stage_based():
                         logger.info("[REQUIREMENTS] Follow-up asked")
                         next_stage = 'suggest_requirements'
             else:
-                if intent == REQ_ACCEPT:
+                updated_model_list = handle_requirements_edit(user_message, requirements, need_context)
+                if updated_model_list != requirements:
+                    session.set_requirements(updated_model_list)
+                    requirements = updated_model_list
+                    answers['requirements'] = list(updated_model_list)
+                    state['awaiting_requirements_feedback'] = True
+                    state['awaiting_requirements_edit'] = False
+                    state['requirements_current'] = list(updated_model_list)
+                    answers['state'] = state
+                    session.set_answers(answers)
+                    formatted = _format_requirements_list(updated_model_list)
+                    ai_response = (
+                        "Aqui está a lista atualizada de requisitos conforme solicitado:\n\n"
+                        f"{formatted}\n\n"
+                        "Deseja ajustar mais algum item ou posso seguir para as estratégias de solução?"
+                    )
+                    logger.info("[REQUIREMENTS] Model-based edit applied")
+                    next_stage = 'suggest_requirements'
+                elif intent == REQ_ACCEPT:
                     state['awaiting_requirements_feedback'] = False
                     state['awaiting_requirements_edit'] = False
                     answers['state'] = state
