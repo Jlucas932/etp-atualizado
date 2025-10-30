@@ -295,7 +295,9 @@ def parse_update_command_regex(user_message: str, current_requirements: List[Dic
         "trocar", "troque", "trocar", "mudar", "mude", "alterar", "altere",
         "modificar", "modifique", "ajustar", "ajuste", "corrigir", "corrija",
         "atualizar", "atualize", "editar", "edite", "mas ", "porém", "porem",
-        "entretanto", "contudo", "todavia"
+        "entretanto", "contudo", "todavia", "não gostei", "nao gostei",
+        "gere outro", "gere outros", "gera outro", "gera outros", "refaz",
+        "refazer", "refaca", "refaça"
     ]
     has_edit_intent = any(keyword in msg for keyword in edit_keywords)
 
@@ -364,11 +366,19 @@ def parse_update_command_regex(user_message: str, current_requirements: List[Dic
         if req_indices:
             # Check for explicit new text after ":"
             new_text = extract_new_text_after_colon(user_message)
+            regen_triggers = [
+                'não gostei', 'nao gostei', 'gere outro', 'gere outros',
+                'gera outro', 'gera outros', 'refaz', 'refazer', 'refaça', 'refaca'
+            ]
+            should_regenerate = not new_text or any(
+                trigger in msg for trigger in regen_triggers
+            )
             return {
                 'intent': 'edit',
                 'items': req_indices,
                 'new_text': new_text,
-                'message': f'Requisitos para edição: {", ".join(req_indices)}'
+                'message': f'Requisitos para edição: {", ".join(req_indices)}',
+                'regenerate': should_regenerate
             }
         else:
             return {'intent': 'unclear', 'items': [], 'message': 'Não foi possível identificar quais requisitos alterar'}
@@ -479,7 +489,9 @@ def determine_intent(message_lower: str, req_indices: List[str]) -> str:
         'alterar', 'altere', 'modificar', 'modifique', 'modifico',
         'trocar', 'troque', 'troco', 'mudar', 'mude', 'mudo',
         'editar', 'edite', 'edito', 'ajustar', 'ajuste', 'ajusto',
-        'corrigir', 'corrija', 'corrijo', 'atualizar', 'atualize', 'atualizo'
+        'corrigir', 'corrija', 'corrijo', 'atualizar', 'atualize', 'atualizo',
+        'não gostei', 'nao gostei', 'gere outro', 'gere outros',
+        'gera outro', 'gera outros', 'refaz', 'refazer', 'refaça', 'refaca'
     ]
     if any(word in message_lower for word in edit_patterns):
         return 'edit'

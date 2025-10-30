@@ -15,7 +15,11 @@ def _new_requirement_line(necessity: str, existing: Dict[int, str], hint: str) -
     for line in rag_candidates:
         if line not in existing.values():
             return line
-    llm_candidates = llm_generate_requirements(necessity)
+    llm_candidates = llm_generate_requirements(
+        necessity,
+        target_count=1,
+        existing=list(existing.values()),
+    )
     for line in llm_candidates:
         if line not in existing.values():
             return line
