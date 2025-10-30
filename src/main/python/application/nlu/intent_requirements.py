@@ -24,6 +24,21 @@ def detect_intent(user_text: str) -> str:
 
     if any(re.search(p, txt) for p in EDIT_PATTERNS):
         return EDIT
+    if any(x in txt for x in [
+        "não gostei",
+        "nao gostei",
+        "substitua",
+        "troque",
+        "gere outros",
+        "gere novos",
+        "mude o",
+        "refaça",
+        "refaca",
+        "recrie",
+        "refazer requisito",
+        "substituir",
+    ]):
+        return EDIT
     if any(re.search(p, txt) for p in ACCEPT_PATTERNS):
         return ACCEPT
     if any(re.search(p, txt) for p in UNCLEAR_PATTERNS):
