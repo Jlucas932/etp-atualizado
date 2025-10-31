@@ -7,6 +7,7 @@ import os
 import json
 import pickle
 import logging
+import re
 from pathlib import Path
 from typing import List, Dict, Tuple, Optional
 import numpy as np
@@ -482,6 +483,58 @@ class RAGRetrieval:
 # Instância global do retrieval
 _retrieval_instance = None
 
+
+PORTUGUESE_STOPWORDS = {
+    'para', 'com', 'como', 'onde', 'quando', 'qual', 'quais', 'pela', 'pelos',
+    'pelas', 'sobre', 'entre', 'após', 'antes', 'pois', 'isso', 'dessa', 'desse',
+    'deste', 'desta', 'nosso', 'nossa', 'seus', 'suas', 'este', 'esta', 'aquele',
+    'aquela', 'tem', 'ter', 'cada', 'mais', 'menos', 'muito', 'mesmo', 'mesma',
+    'mesmos', 'mesmas', 'sendo', 'ser', 'são', 'estão', 'essas', 'esses', 'fazer',
+    'feito', 'feita', 'feitos', 'feitas', 'tais', 'também', 'aos', 'das', 'dos',
+    'por', 'pelo', 'pela', 'para', 'que', 'uma', 'umas', 'uns', 'num', 'numa',
+    'de', 'do', 'da', 'em', 'no', 'na', 'nos', 'nas', 'e', 'a', 'o', 'os', 'as'
+}
+
+
+def _extract_keywords(text: str, limit: int = 18) -> List[str]:
+    """Extrai palavras-chave removendo stopwords e termos curtos."""
+
+    if not text:
+        return []
+
+    tokens = re.findall(r"\b\w+\b", text.lower())
+    keywords: List[str] = []
+    for token in tokens:
+        if len(token) < 4:
+            continue
+        if token in PORTUGUESE_STOPWORDS:
+            continue
+        if token not in keywords:
+            keywords.append(token)
+        if len(keywords) >= limit:
+            break
+    return keywords
+
+
+def _score_chunk_similarity(chunk_text: str, section: str, keywords: List[str]) -> int:
+    """Pontua um chunk com base na sobreposição de palavras-chave e seção."""
+
+    if not chunk_text:
+        return 0
+
+    text_lower = chunk_text.lower()
+    score = 0
+    for kw in keywords:
+        if kw in text_lower:
+            score += 1
+
+    if section == 'necessidade':
+        score += 3
+    elif section == 'estrategia':
+        score += 2
+
+    return score
+
 def get_retrieval_instance(database_url: str = None, openai_client = None) -> RAGRetrieval:
     """Retorna instância singleton do RAGRetrieval"""
     global _retrieval_instance
@@ -507,24 +560,15 @@ def search_legal(objective_slug: str, query: str, k: int = 8) -> List[Dict]:
     return retrieval.search_legal(objective_slug, query, k)
 
 def retrieve_for_stage(necessity: str, stage: str, k: int = 12) -> List[Dict]:
-    """
-    Retrieve chunks from RAG based on stage, prioritizing relevant sections.
-    
-    Args:
-        necessity: User's necessity description
-        stage: Current stage in the flow
-        k: Number of chunks to retrieve
-        
-    Returns:
-        List of chunks with id, section, text, and score
-    """
+    """Recupera chunks do RAG priorizando seções relevantes para o estágio."""
+
     retrieval = get_retrieval_instance()
-    
-    # Define section priorities by stage
+
     stage_section_map = {
-        'suggest_requirements': ['requisito', 'necessidade'],
-        'refine_requirements': ['requisito', 'necessidade'],
-        'solution_path': ['requisito', 'norma_legal'],
+        'suggest_requirements': ['necessidade', 'requisito'],
+        'refine_requirements': ['necessidade', 'requisito'],
+        'solution_path': ['necessidade', 'requisito', 'estrategia'],
+        'solution_strategies': ['necessidade', 'estrategia', 'requisito'],
         'pca': ['requisito'],
         'legal_norms': ['norma_legal', 'marco_legal'],
         'qty_value': ['requisito'],
@@ -532,30 +576,26 @@ def retrieve_for_stage(necessity: str, stage: str, k: int = 12) -> List[Dict]:
         'summary': ['requisito', 'norma_legal'],
         'preview': ['requisito', 'norma_legal']
     }
-    
-    # Get prioritized sections for this stage
+
     priority_sections = stage_section_map.get(stage, ['requisito'])
-    
+
     results = []
     chunks_per_section = max(k // len(priority_sections), 3)
-    
-    # Search in each priority section
+
     for section in priority_sections:
         try:
             section_results = retrieval._hybrid_search(
                 section_type=section,
-                objective_slug='',  # No filtering by objective
+                objective_slug='',
                 query=necessity,
                 k=chunks_per_section
             )
             results.extend(section_results)
         except Exception as e:
             logger.warning(f"Error searching section {section}: {e}")
-    
-    # If no results from priority sections, try any section
+
     if not results:
         try:
-            # Try searching requisito as fallback
             results = retrieval._hybrid_search(
                 section_type='requisito',
                 objective_slug='',
@@ -564,18 +604,32 @@ def retrieve_for_stage(necessity: str, stage: str, k: int = 12) -> List[Dict]:
             )
         except Exception as e:
             logger.error(f"Error in fallback search: {e}")
-    
-    # Sort by hybrid score and return top k
-    results.sort(key=lambda x: x.get('hybrid_score', 0), reverse=True)
-    
-    # Format results for generator
-    formatted_results = []
-    for r in results[:k]:
+
+    keywords = _extract_keywords(necessity)
+
+    scored_results = []
+    for r in results:
+        section = r.get('section_type')
+        content = r.get('content', '')
+        base_score = _score_chunk_similarity(content, section, keywords)
+        hybrid_score = r.get('hybrid_score', 0) or 0
+        scored_results.append((base_score, hybrid_score, r))
+
+    scored_results.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+    positive_scores = [item for item in scored_results if item[0] > 0]
+    if positive_scores:
+        remaining = [item for item in scored_results if item[0] == 0]
+        scored_results = positive_scores + remaining[:max(0, k - len(positive_scores))]
+
+    formatted_results: List[Dict] = []
+    for base_score, hybrid_score, r in scored_results[:k]:
         formatted_results.append({
             'id': r.get('chunk_id'),
             'section': r.get('section_type'),
             'text': r.get('content'),
-            'score': r.get('hybrid_score', 0)
+            'score': hybrid_score,
+            'keyword_score': base_score
         })
-    
+
     return formatted_results
