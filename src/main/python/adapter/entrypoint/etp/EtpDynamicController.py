@@ -1578,6 +1578,11 @@ def chat_stage_based():
             else:
                 # First time in this stage - generate strategies
                 context = retrieve_for_stage(necessity, 'solution_strategies', k=8)
+                logger.info(
+                    "[RAG:USED n=%s] stage=solution_strategies necessity='%s'",
+                    len(context),
+                    (necessity or '')[:120]
+                )
                 
                 # Build history
                 history = []
@@ -1606,7 +1611,30 @@ def chat_stage_based():
                 }
                 
                 result = generate_answer('solution_strategies', history, user_message, rag_context)
-                
+
+                diagnostics = result.get('diagnostics', {})
+                fallback_used = diagnostics.get('fallback_used')
+                context_chunks = diagnostics.get('context_chunks', len(context))
+                sectors = diagnostics.get('sector_tags') or []
+                object_nature = diagnostics.get('object_nature') or 'aquisição ou contratação'
+                if fallback_used:
+                    logger.info(
+                        "[STRATEGY:DEFAULT_FALLBACK_USED] stage=solution_strategies context_chunks=%s necessity='%s'",
+                        context_chunks,
+                        (necessity or '')[:120]
+                    )
+                else:
+                    logger.info(
+                        "[STRATEGY:CONTEXTUAL_GENERATION] stage=solution_strategies context_chunks=%s nature=%s sectors=%s necessity='%s'",
+                        context_chunks,
+                        object_nature,
+                        ', '.join(sectors) if sectors else 'não identificado',
+                        (necessity or '')[:120]
+                    )
+
+                # Diagnostics are only for logging
+                result.pop('diagnostics', None)
+
                 # Extract strategies
                 strategies = result.get('strategies', [])
                 intro = result.get('intro', '')

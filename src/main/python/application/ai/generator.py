@@ -9,6 +9,18 @@ from config.models import MODEL, TEMP
 
 logger = logging.getLogger(__name__)
 
+# Stopwords básicos para extração de palavras-chave em prompts
+PORTUGUESE_STOPWORDS = {
+    'para', 'com', 'como', 'onde', 'quando', 'qual', 'quais', 'pela', 'pelos',
+    'pelas', 'sobre', 'entre', 'após', 'antes', 'pois', 'isso', 'dessa', 'desse',
+    'deste', 'desta', 'nosso', 'nossa', 'seus', 'suas', 'este', 'esta', 'aquele',
+    'aquela', 'tem', 'ter', 'cada', 'mais', 'menos', 'muito', 'mesmo', 'mesma',
+    'mesmos', 'mesmas', 'sendo', 'ser', 'são', 'estão', 'essas', 'esses', 'fazer',
+    'feito', 'feita', 'feitos', 'feitas', 'tais', 'também', 'aos', 'das', 'dos',
+    'por', 'pelo', 'pela', 'para', 'que', 'uma', 'umas', 'uns', 'num', 'numa',
+    'de', 'do', 'da', 'em', 'no', 'na', 'nos', 'nas', 'e', 'a', 'o', 'os', 'as'
+}
+
 # Compatibilidade com chamadores legados que dependem de constantes padrão
 # de modelo e temperatura neste módulo.
 DEFAULT_MODEL = MODEL
@@ -369,13 +381,123 @@ def generate_answer(stage: str, history: List[Dict], user_input: str, rag_contex
         
         # Post-process to remove command patterns and check for repetition
         result = _post_process_response(result, stage)
-        
+        fallback_payload = bool(result.pop("__fallback__", False))
+
+        if stage == "solution_strategies":
+            solution_context = rag_context.get('_solution_context', {})
+            context_chunks = len(rag_context.get('chunks', []))
+            rag_missing = context_chunks == 0
+            fallback_flag = fallback_payload or rag_missing
+
+            diagnostics = {
+                'fallback_used': fallback_flag,
+                'fallback_payload': fallback_payload,
+                'rag_empty': rag_missing,
+                'context_chunks': context_chunks,
+                'sector_tags': solution_context.get('sector_tags', []),
+                'object_nature': solution_context.get('object_nature'),
+                'criticality': solution_context.get('criticality'),
+                'keywords': solution_context.get('keywords', [])
+            }
+            result['diagnostics'] = diagnostics
+
+            need_excerpt = (rag_context.get('necessity') or user_input or '')[:120]
+            if fallback_flag:
+                logger.info(
+                    "[STRATEGY:DEFAULT_FALLBACK_USED] necessity='%s' context_chunks=%s",
+                    need_excerpt,
+                    context_chunks
+                )
+            else:
+                sectors = diagnostics['sector_tags'] or ['não identificado']
+                logger.info(
+                    "[STRATEGY:CONTEXTUAL_GENERATION] necessity='%s' context_chunks=%s nature=%s sectors=%s",
+                    need_excerpt,
+                    context_chunks,
+                    diagnostics.get('object_nature'),
+                    ", ".join(sectors)
+                )
+
         return result
         
     except Exception as e:
         logger.error(f"[GENERATOR] Error in generate_answer: {e}")
         logger.error(traceback.format_exc())
         return _fallback_response(stage, user_input, rag_context)
+
+def _extract_domain_keywords(text: str, limit: int = 18) -> List[str]:
+    """Extrai palavras-chave removendo stopwords básicos."""
+
+    if not text:
+        return []
+
+    tokens = re.findall(r"\b\w+\b", text.lower())
+    keywords: List[str] = []
+    for token in tokens:
+        if len(token) < 4:
+            continue
+        if token in PORTUGUESE_STOPWORDS:
+            continue
+        if token not in keywords:
+            keywords.append(token)
+        if len(keywords) >= limit:
+            break
+    return keywords
+
+
+def _prepare_solution_context(necessity: str, requirements: List[str]) -> Dict[str, Any]:
+    """Inferências simples sobre o objeto para orientar estratégias."""
+
+    base_text = " ".join(filter(None, [necessity] + list(requirements)))
+    text_lower = base_text.lower()
+
+    sector_map = {
+        'aeronáutica': ['aeronave', 'hangar', 'rbac', 'anac', 'voo', 'frota aérea', 'helicóptero'],
+        'tecnologia da informação': ['ti', 'informática', 'computador', 'notebook', 'servidor', 'datacenter', 'software', 'sistema', 'rede', 'cyber'],
+        'transporte e logística': ['frota', 'veículo', 'ônibus', 'logística', 'combustível', 'manutenção veicular'],
+        'infraestrutura e obras': ['obra', 'engenharia', 'construção', 'reforma', 'manutenção predial', 'infraestrutura'],
+        'saúde': ['hospital', 'clínic', 'saúde', 'laboratório', 'equipamento médico'],
+        'educação': ['escola', 'educa', 'universidade', 'aluno', 'didático'],
+        'segurança pública': ['segurança', 'vigilância', 'cftv', 'monitoramento', 'patrulha'],
+        'energia e sustentabilidade': ['energia', 'fotovolta', 'solar', 'eficiência energética']
+    }
+
+    sector_tags = []
+    for sector, keywords in sector_map.items():
+        if any(keyword in text_lower for keyword in keywords):
+            sector_tags.append(sector)
+
+    nature_map = {
+        'obras e engenharia': ['obra', 'engenharia', 'constru', 'reforma', 'infraestrutura', 'manutenção predial'],
+        'serviço especializado': ['serviço', 'manutenção', 'suporte', 'monitoramento', 'outsourcing', 'gestão', 'consultoria'],
+        'solução de tecnologia da informação': ['software', 'sistema', 'plataforma', 'ti', 'informática', 'tecnologia', 'digital', 'cloud', 'rede', 'servidor'],
+        'aquisição de bens permanentes ou de consumo': ['aquisição', 'compra', 'fornecimento', 'equipamento', 'material', 'dispositivo', 'hardware']
+    }
+
+    object_nature = 'aquisição ou contratação'
+    for nature, keywords in nature_map.items():
+        if any(keyword in text_lower for keyword in keywords):
+            object_nature = nature
+            break
+
+    criticality = 'não informado'
+    high_markers = ['urgente', 'crítico', 'segurança', 'essencial', 'continuidade', '24/7', 'alta disponibilidade']
+    medium_markers = ['importante', 'estratégico', 'prioritário', 'modernização']
+    if any(marker in text_lower for marker in high_markers):
+        criticality = 'alta'
+    elif any(marker in text_lower for marker in medium_markers):
+        criticality = 'média'
+
+    keywords = _extract_domain_keywords(base_text, limit=20)
+
+    return {
+        'sector_tags': sector_tags,
+        'object_nature': object_nature,
+        'criticality': criticality,
+        'keywords': keywords,
+        'requirements_sample': requirements[:10]
+    }
+
 
 def _build_user_prompt(stage: str, user_input: str, rag_text: str, rag_context: Dict) -> str:
     """Constrói o prompt do usuário baseado no estágio"""
@@ -428,20 +550,42 @@ Retorne em formato JSON:
 
     elif stage == "solution_strategies":
         requirements = rag_context.get('requirements', [])
-        reqs_text = "\n".join(requirements[:10]) if requirements else "Requisitos não disponíveis."
-        
-        return f"""Necessidade: {necessity}
+        solution_context = _prepare_solution_context(necessity, requirements)
+        rag_context['_solution_context'] = solution_context
 
-Requisitos definidos (primeiros 10):
+        reqs_text = "\n".join(solution_context.get('requirements_sample') or [])
+        if not reqs_text:
+            reqs_text = "Requisitos não disponíveis."
+
+        sector_tags = solution_context.get('sector_tags', [])
+        sectors_text = ', '.join(sector_tags) if sector_tags else 'não identificado'
+        object_nature = solution_context.get('object_nature', 'aquisição ou contratação')
+        criticality = solution_context.get('criticality', 'não informado')
+        keywords = solution_context.get('keywords', [])
+        keyword_text = ', '.join(keywords[:8]) if keywords else 'não identificado'
+
+        rag_section = rag_text if rag_text else "Nenhum contexto disponível. Gere recomendações fundamentadas apenas nos dados da necessidade e dos requisitos acima."
+
+        return f"""Necessidade central: {necessity}
+
+Perfil do objeto:
+- Natureza predominante: {object_nature}
+- Criticidade percebida: {criticality}
+- Setores correlatos: {sectors_text}
+- Palavras-chave relevantes: {keyword_text}
+
+Requisitos aceitos (até 10 itens):
 {reqs_text}
 
-Contexto RAG:
-{rag_text if rag_text else "Nenhum contexto disponível."}
+Contextos recuperados (RAG):
+{rag_section}
 
-Gere de 2 a 5 opções de estratégias de contratação aplicáveis à necessidade informada.
-Exemplos de estratégias: compra direta, locação, comodato, outsourcing, leasing operacional, ata de registro de preços, contrato por desempenho, etc.
-
-NÃO descreva "passos para fazer um ETP". Foque em OPÇÕES DE CONTRATAÇÃO.
+Instruções para geração:
+1. Proponha 3 a 5 estratégias de contratação aderentes ao contexto acima (ex.: compra direta especializada, leasing operacional de aeronaves, comodato de equipamentos de TI, outsourcing de manutenção aeronáutica, ARP setorial etc.).
+2. Diferencie abordagens para bens, serviços ou obras de acordo com a natureza indicada.
+3. Para cada estratégia informe: título, quando indicado, vantagens, riscos/cuidados com mitigação e referências explícitas aos requisitos (campo pontos_de_requisito_afetados com os números relevantes).
+4. Utilize os trechos do RAG quando fizer sentido e deixe claro no texto como eles embasam a recomendação. Se o RAG não trouxer exemplos similares, sinalize no campo "quando_indicado" que é uma recomendação baseada em análise interna.
+5. Evite descrever etapas do ETP; foque apenas nas modalidades/arranjos contratuais e no encaixe com a necessidade técnica.
 
 Retorne em formato JSON:
 {{
@@ -812,7 +956,8 @@ def _ensure_min_payload(resp: Dict, stage: str, necessity: str) -> Dict:
         if not strategies or len(strategies) < 2:
             logger.warning(f"[ENSURE_MIN] Strategies vazio/insuficiente ({len(strategies)}), aplicando fallback")
             resp["strategies"] = _fallback_strategies(necessity)
-        
+            resp["__fallback__"] = True
+
         # Intro vazio
         if not resp.get("intro") or resp.get("intro").strip() == "":
             resp["intro"] = "Considerando o contexto, apresento as principais estratégias de contratação aplicáveis:"
@@ -848,7 +993,8 @@ def _fallback_response(stage: str, user_input: str, rag_context: Dict) -> Dict:
     elif stage == "solution_strategies":
         resp = {
             "intro": "",
-            "strategies": _fallback_strategies(necessity)
+            "strategies": _fallback_strategies(necessity),
+            "__fallback__": True
         }
         return _ensure_min_payload(resp, stage, necessity)
     
